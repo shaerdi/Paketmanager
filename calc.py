@@ -1,8 +1,8 @@
 import pandas as pd
 from scipy import sparse
 from sklearn.cluster import KMeans
-from sklearn.decomposition import PCA
 from scipy.linalg import norm
+import pathlib
 
 def readData(filename = './Q1-Q3_2018_RangesEndo.csv'):
     daten = pd.read_csv(filename,sep=';')
@@ -27,10 +27,9 @@ def buildKMeansMat(daten):
     daten = np.ones(len(iIndex))
     return sparse.coo_matrix( (daten, (iIndex,jIndex) ) )
 
-def fitKmeans(daten, nCluster = 8, do_pca=False):
+def fitKmeans(daten, nCluster = 8):
 
     mat = buildKMeansMat(daten)
-
 
     km = KMeans(n_clusters = nCluster, 
             init='k-means++',
@@ -38,19 +37,12 @@ def fitKmeans(daten, nCluster = 8, do_pca=False):
             n_init=1,
             )
 
-    pca = PCA(n_components = 0.9, whiten=True)
-    if do_pca:
-        transformedData = pca.fit_transform(mat.todense())
-    else:
-        transformedData = mat
-    kategorie = km.fit_predict(transformedData)
-    return km, kategorie, pca
+    kategorie = km.fit_predict(mat)
+    return km, kategorie
 
-def plotKategorie(daten, km, fallKategorie, pca=None, maxDist=1):
+def plotKategorie(daten, km, fallKategorie,maxDist=0.5):
 
     mm = buildKMeansMat(daten).todense()
-    if not pca is None:
-        mm = pca.fit_transform(mm)
 
     falldaten = []
     maxKat = fallKategorie.max()+1
@@ -67,7 +59,7 @@ def plotKategorie(daten, km, fallKategorie, pca=None, maxDist=1):
             'Leistungen' : group[1].Leistung.values,
             } )
 
-        daten.loc[group[1].index,'Kategorie'] = k
+        daten.loc[group[1].index,'Kategorie'] = fallKategorie[i]
         daten.loc[group[1].index,'Distanz'] = d
 
     falldaten = sorted(
@@ -93,9 +85,22 @@ def plotKategorie(daten, km, fallKategorie, pca=None, maxDist=1):
         color.extend( colors )
         counter += 1
 
-    f,ax = plt.subplots()
+    f,ax = plt.subplots(figsize=(18,10))
     ax.scatter(x,y,c=color,cmap=sns.color_palette())
     ax.set_xlabel('Falldatum')
     ax.set_ylabel('Leistung')
 
     ax.axhline(len(getLeistungen(daten)), color='k',linestyle=':')
+    return f,ax
+
+def doCalc(filename):
+    path = pathlib.Path(filename)
+    daten = readData(filename)
+    km,kategorie = fitKmeans(daten,20)
+    f,ax = plotKategorie(daten,km,kategorie)
+
+    picPath = path.parent / (path.stem + "_Bild")
+    f.savefig(str(picPath.with_suffix('.png')))
+
+    csvPath = path.parent / (path.stem + "_Eingeteilt")
+    daten.to_csv( str(csvPath.with_suffix('.csv')),sep=';',index=False)
