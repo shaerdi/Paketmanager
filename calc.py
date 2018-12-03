@@ -127,7 +127,7 @@ class Categorize:
 
         daten = self.daten
         writer = pd.ExcelWriter(str(fname), engine='xlsxwriter')
-        daten.to_excel(writer, sheet_name='Rohdaten')
+        daten.to_excel(writer, sheet_name='Rohdaten', index=False)
         workbook = writer.book
         sheet1 = writer.sheets['Rohdaten']
 
@@ -138,6 +138,7 @@ class Categorize:
 
         sheet2 = workbook.add_worksheet('Bild')
         sheet2.insert_image("A1", "", options= {'image_data': imgdata})
+        plt.close(f)
 
 
         title_format = workbook.add_format()
@@ -171,5 +172,3 @@ class Categorize:
                 currentRow += len(fallGroup)
 
         workbook.close()
-        plt.close(f)
-
