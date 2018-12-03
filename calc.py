@@ -9,7 +9,8 @@ import itertools
 
 class Categorize:
 
-    maxDist = 0.5
+    maxDist = 1
+    randomseed = 5
 
     def __init__(self, filename):
         self.filename=filename
@@ -47,6 +48,7 @@ class Categorize:
                 init='k-means++',
                 max_iter = 100,
                 n_init=1,
+                random_state=self.randomseed,
                 )
 
         self.fallKategorie = self.km.fit_predict(self.kMeansMat)
@@ -180,6 +182,7 @@ class Categorize:
                                 clr
                                 )
                     break
+                currentRow += len(fallGroup)
             setColWidth(sheet)
 
 
