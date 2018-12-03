@@ -72,7 +72,8 @@ class Categorize:
                 'Leistungen' : group[1].Leistung.values,
                 } )
 
-            daten.loc[group[1].index,'Kategorie'] = fallKategorie[i]
+            # daten.loc[group[1].index,'Kategorie'] = fallKategorie[i]
+            daten.loc[group[1].index,'Kategorie'] = k
             daten.loc[group[1].index,'Distanz'] = d
 
         self.falldaten = sorted(
@@ -122,7 +123,7 @@ class Categorize:
     def writeExcel(self,fname, directory='Resultate'):
 
         fname = pathlib.Path('.') / directory / fname
-        fname = fname.with_suffix('xlsx')
+        fname = fname.with_suffix('.xlsx')
 
         daten = self.daten
         writer = pd.ExcelWriter(str(fname), engine='xlsxwriter')
@@ -170,61 +171,5 @@ class Categorize:
                 currentRow += len(fallGroup)
 
         workbook.close()
+        plt.close(f)
 
-# def doCalc(filename):
-    # path = pathlib.Path(filename)
-    # daten = readData(filename)
-    # km,kategorie = fitKmeans(daten,20)
-    # f,ax = plotKategorie(daten,km,kategorie)
-
-    # picPath = path.parent / 'Resultate' / (path.stem + "_Bild")
-    # f.savefig(str(picPath.with_suffix('.png')))
-
-    # csvPath = path.parent  / 'Resultate' / (path.stem + "_Eingeteilt")
-    # daten.to_csv( str(csvPath.with_suffix('.csv')),sep=';',index=False)
-def test():
-    fname = 'test.xlsx'
-    writer = pd.ExcelWriter(fname, engine='xlsxwriter')
-    daten.to_excel(writer, sheet_name='Rohdaten')
-    workbook = writer.book
-    sheet1 = writer.sheets['Rohdaten']
-
-    title_format = workbook.add_format()
-    title_format.set_bold()
-    title_format.set_bottom()
-
-    cell_format1 = workbook.add_format()
-    cell_format2 = workbook.add_format()
-    cell_format2.set_bg_color('#dddddd')
-
-    cycler = itertools.cycle( (cell_format1, cell_format2) )
-    for i,kategorieGroup in enumerate(daten.groupby('Kategorie')):
-        # print("kategorie ", i)
-        sheet = workbook.add_worksheet('Pakete_Kat_{:02d}'.format(i))
-        sheet.write_row(
-                'A1', 
-                kategorieGroup[1].columns.values,
-                title_format,
-                )
-        currentRow = 1
-        for j,distGroup in kategorieGroup[1].groupby('Distanz'):
-            # print('Distanz ', j)
-            for k,fallGroup in distGroup.groupby('FallDatum'):
-                # print("fall: ",k)
-                clr = next(cycler)
-                for colNum,colName in enumerate(distGroup.columns):
-                    sheet.write_column(
-                            currentRow,
-                            colNum,
-                            fallGroup[colName],
-                            clr
-                            )
-                break
-            currentRow += len(fallGroup)
-            # print(currentRow)
-            # sheet.write_row
-            # break
-        break
-
-    workbook.close()
-    print('fertig')
