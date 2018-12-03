@@ -3,104 +3,228 @@ from scipy import sparse
 from sklearn.cluster import KMeans
 from scipy.linalg import norm
 import pathlib
+import xlsxwriter
+from io import BytesIO
+import itertools
 
-def readData(filename = './Q1-Q3_2018_RangesEndo.csv'):
-    daten = pd.read_csv(filename,sep=';')
-    return daten
+class Categorize:
 
-def getLeistungen(daten):
-    datenNurTarmed = daten[daten.Leistungskategorie == 'Tarmed']
-    leistungen = np.unique(datenNurTarmed.Leistung)
-    return leistungen
+    maxDist = 0.5
 
-def buildKMeansMat(daten):
+    def __init__(self, filename):
+        self.filename=filename
+        self.daten = pd.read_csv(filename,sep=';')
 
-    leistungen = getLeistungen(daten)
+    def doCalc(self, nCluster = 8):
+        self.buildKMeansMat()
+        self.fitKmeans(nCluster)
+        self.buildGroups()
 
-    iIndex = []
-    jIndex = []
-    for i,group in enumerate(daten.groupby('FallDatum')):
-        for j,leistung in enumerate(leistungen):
-            if leistung in group[1].Leistung.values:
-                iIndex.append(i)
-                jIndex.append(j)
-    daten = np.ones(len(iIndex))
-    return sparse.coo_matrix( (daten, (iIndex,jIndex) ) )
 
-def fitKmeans(daten, nCluster = 8):
+    def getLeistungen(self):
+        datenNurTarmed = self.daten[self.daten.Leistungskategorie == 'Tarmed']
+        leistungen = np.unique(datenNurTarmed.Leistung)
+        return leistungen
 
-    mat = buildKMeansMat(daten)
+    def buildKMeansMat(self):
 
-    km = KMeans(n_clusters = nCluster, 
-            init='k-means++',
-            max_iter = 100,
-            n_init=1,
-            )
+        daten = self.daten
+        leistungen = self.getLeistungen()
 
-    kategorie = km.fit_predict(mat)
-    return km, kategorie
+        iIndex = []
+        jIndex = []
+        for i,group in enumerate(daten.groupby('FallDatum')):
+            for j,leistung in enumerate(leistungen):
+                if leistung in group[1].Leistung.values:
+                    iIndex.append(i)
+                    jIndex.append(j)
+        daten = np.ones(len(iIndex))
+        self.kMeansMat = sparse.coo_matrix( (daten, (iIndex,jIndex) ) )
 
-def plotKategorie(daten, km, fallKategorie,maxDist=0.5):
+    def fitKmeans(self, nCluster = 8):
 
-    mm = buildKMeansMat(daten).todense()
+        self.km = KMeans(n_clusters = nCluster, 
+                init='k-means++',
+                max_iter = 100,
+                n_init=1,
+                )
 
-    falldaten = []
-    maxKat = fallKategorie.max()+1
+        self.fallKategorie = self.km.fit_predict(self.kMeansMat)
 
-    for i,group in enumerate(daten.groupby('FallDatum')):
-        k = fallKategorie[i]
-        d = norm(km.cluster_centers_[k,:] - mm[i,:])
-        if d > maxDist:
-            k = maxKat
-        falldaten.append( {
-            'Falldatum' : group[0],
-            'Kategorie' : k,
-            'Distanz' : d,
-            'Leistungen' : group[1].Leistung.values,
-            } )
+    def buildGroups(self):
+        daten = self.daten
+        mm = self.kMeansMat.todense()
+        fallKategorie = self.fallKategorie
+        km = self.km
 
-        daten.loc[group[1].index,'Kategorie'] = fallKategorie[i]
-        daten.loc[group[1].index,'Distanz'] = d
+        falldaten = []
+        maxKat = fallKategorie.max()+1
 
-    falldaten = sorted(
-            falldaten, 
-            key = lambda tup: (tup['Kategorie'], tup['Distanz'])
-            )
+        for i,group in enumerate(daten.groupby('FallDatum')):
+            k = fallKategorie[i]
+            d = norm(km.cluster_centers_[k,:] - mm[i,:])
+            if d > self.maxDist:
+                k = maxKat
+            falldaten.append( {
+                'Falldatum' : group[0],
+                'Kategorie' : k,
+                'Distanz' : d,
+                'Leistungen' : group[1].Leistung.values,
+                } )
 
-    colorPalette = sns.color_palette()
+            daten.loc[group[1].index,'Kategorie'] = fallKategorie[i]
+            daten.loc[group[1].index,'Distanz'] = d
 
-    leistungen = sorted(np.unique(daten.Leistung.values))
-    x = []
-    y = []
-    color = []
-    counter = 0
-    for falldatum in falldaten:
-        yi = []
-        for leistung in falldatum['Leistungen']:
-            yi.append(leistungen.index(leistung))
-        y.extend(yi)
-        x.extend( (counter * np.ones(len(yi))).tolist() )
-        colors = len(yi) * [colorPalette[falldatum['Kategorie'] % 8]]
-        # color.extend((falldatum['Kategorie'] * np.ones(len(yi))).tolist() )
-        color.extend( colors )
-        counter += 1
+        self.falldaten = sorted(
+                falldaten, 
+                key = lambda tup: (tup['Kategorie'], tup['Distanz'])
+                )
 
-    f,ax = plt.subplots(figsize=(18,10))
-    ax.scatter(x,y,c=color,cmap=sns.color_palette())
-    ax.set_xlabel('Falldatum')
-    ax.set_ylabel('Leistung')
+    def plotKategorie(self):
 
-    ax.axhline(len(getLeistungen(daten)), color='k',linestyle=':')
-    return f,ax
+        colorPalette = sns.color_palette()
+        daten = self.daten
 
-def doCalc(filename):
-    path = pathlib.Path(filename)
-    daten = readData(filename)
-    km,kategorie = fitKmeans(daten,20)
-    f,ax = plotKategorie(daten,km,kategorie)
+        leistungen = sorted(np.unique(daten.Leistung.values))
+        x = []
+        y = []
+        color = []
+        counter = 0
+        for falldatum in self.falldaten:
+            yi = []
+            for leistung in falldatum['Leistungen']:
+                yi.append(leistungen.index(leistung))
+            y.extend(yi)
+            x.extend( (counter * np.ones(len(yi))).tolist() )
+            colors = len(yi) * [colorPalette[falldatum['Kategorie'] % 8]]
+            # color.extend((falldatum['Kategorie'] * np.ones(len(yi))).tolist() )
+            color.extend( colors )
+            counter += 1
 
-    picPath = path.parent / (path.stem + "_Bild")
-    f.savefig(str(picPath.with_suffix('.png')))
+        f,ax = plt.subplots(figsize=(18,10))
+        ax.scatter(x,y,c=color,cmap=sns.color_palette())
+        ax.set_xlabel('Falldatum')
+        ax.set_ylabel('Leistung')
 
-    csvPath = path.parent / (path.stem + "_Eingeteilt")
-    daten.to_csv( str(csvPath.with_suffix('.csv')),sep=';',index=False)
+        ax.axhline(len(self.getLeistungen())+0.5, color='k',linestyle=':')
+        return f,ax
+
+    def saveResults(self, directory='Resultate'):
+        path = pathlib.Path(self.filename)
+        f,ax = self.plotKategorie()
+
+        picPath = path.parent / directory / (path.stem + "_Bild")
+        f.savefig(str(picPath.with_suffix('.png')))
+
+        csvPath = path.parent  / directory / (path.stem + "_Eingeteilt")
+        daten.to_csv( str(csvPath.with_suffix('.csv')),sep=';',index=False)
+
+    def writeExcel(self,fname, directory='Resultate'):
+
+        fname = pathlib.Path('.') / directory / fname
+        fname = fname.with_suffix('xlsx')
+
+        daten = self.daten
+        writer = pd.ExcelWriter(str(fname), engine='xlsxwriter')
+        daten.to_excel(writer, sheet_name='Rohdaten')
+        workbook = writer.book
+        sheet1 = writer.sheets['Rohdaten']
+
+        f,ax = self.plotKategorie()
+        imgdata = BytesIO()
+        f.savefig(imgdata, format='png')
+        imgdata.seek(0)
+
+        sheet2 = workbook.add_worksheet('Bild')
+        sheet2.insert_image("A1", "", options= {'image_data': imgdata})
+
+
+        title_format = workbook.add_format()
+        title_format.set_bold()
+        title_format.set_bottom()
+
+        cell_format1 = workbook.add_format()
+        cell_format2 = workbook.add_format()
+        cell_format2.set_bg_color('#dddddd')
+
+        cycler = itertools.cycle( (cell_format1, cell_format2) )
+        for i,kategorieGroup in enumerate(daten.groupby('Kategorie')):
+            sheet = workbook.add_worksheet('Pakete_Kat_{:02d}'.format(i))
+            sheet.write_row(
+                    'A1', 
+                    kategorieGroup[1].columns.values,
+                    title_format,
+                    )
+            currentRow = 1
+            for j,distGroup in kategorieGroup[1].groupby('Distanz'):
+                for k,fallGroup in distGroup.groupby('FallDatum'):
+                    clr = next(cycler)
+                    for colNum,colName in enumerate(distGroup.columns):
+                        sheet.write_column(
+                                currentRow,
+                                colNum,
+                                fallGroup[colName],
+                                clr
+                                )
+                    break
+                currentRow += len(fallGroup)
+
+        workbook.close()
+
+# def doCalc(filename):
+    # path = pathlib.Path(filename)
+    # daten = readData(filename)
+    # km,kategorie = fitKmeans(daten,20)
+    # f,ax = plotKategorie(daten,km,kategorie)
+
+    # picPath = path.parent / 'Resultate' / (path.stem + "_Bild")
+    # f.savefig(str(picPath.with_suffix('.png')))
+
+    # csvPath = path.parent  / 'Resultate' / (path.stem + "_Eingeteilt")
+    # daten.to_csv( str(csvPath.with_suffix('.csv')),sep=';',index=False)
+def test():
+    fname = 'test.xlsx'
+    writer = pd.ExcelWriter(fname, engine='xlsxwriter')
+    daten.to_excel(writer, sheet_name='Rohdaten')
+    workbook = writer.book
+    sheet1 = writer.sheets['Rohdaten']
+
+    title_format = workbook.add_format()
+    title_format.set_bold()
+    title_format.set_bottom()
+
+    cell_format1 = workbook.add_format()
+    cell_format2 = workbook.add_format()
+    cell_format2.set_bg_color('#dddddd')
+
+    cycler = itertools.cycle( (cell_format1, cell_format2) )
+    for i,kategorieGroup in enumerate(daten.groupby('Kategorie')):
+        # print("kategorie ", i)
+        sheet = workbook.add_worksheet('Pakete_Kat_{:02d}'.format(i))
+        sheet.write_row(
+                'A1', 
+                kategorieGroup[1].columns.values,
+                title_format,
+                )
+        currentRow = 1
+        for j,distGroup in kategorieGroup[1].groupby('Distanz'):
+            # print('Distanz ', j)
+            for k,fallGroup in distGroup.groupby('FallDatum'):
+                # print("fall: ",k)
+                clr = next(cycler)
+                for colNum,colName in enumerate(distGroup.columns):
+                    sheet.write_column(
+                            currentRow,
+                            colNum,
+                            fallGroup[colName],
+                            clr
+                            )
+                break
+            currentRow += len(fallGroup)
+            # print(currentRow)
+            # sheet.write_row
+            # break
+        break
+
+    workbook.close()
+    print('fertig')
