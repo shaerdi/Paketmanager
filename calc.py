@@ -149,7 +149,17 @@ class Categorize:
         cell_format2 = workbook.add_format()
         cell_format2.set_bg_color('#dddddd')
 
-        cycler = itertools.cycle( (cell_format1, cell_format2) )
+
+        lens = [
+                1+max([len(str(s)) for s in daten[col].values] + [len(col)]) 
+                for col in daten.columns
+                ]
+
+        def setColWidth(sheet):
+            for i, w  in enumerate(lens):
+                sheet.set_column(i,i,w)
+        
+        setColWidth(sheet1)
         for i,kategorieGroup in enumerate(daten.groupby('Kategorie')):
             sheet = workbook.add_worksheet('Pakete_Kat_{:02d}'.format(i))
             sheet.write_row(
@@ -158,6 +168,7 @@ class Categorize:
                     title_format,
                     )
             currentRow = 1
+            cycler = itertools.cycle( (cell_format1, cell_format2) )
             for j,distGroup in kategorieGroup[1].groupby('Distanz'):
                 for k,fallGroup in distGroup.groupby('FallDatum'):
                     clr = next(cycler)
@@ -169,6 +180,7 @@ class Categorize:
                                 clr
                                 )
                     break
-                currentRow += len(fallGroup)
+            setColWidth(sheet)
+
 
         workbook.close()
