@@ -7,6 +7,22 @@ import xlsxwriter
 from io import BytesIO
 import itertools
 
+class Node:
+    children = []
+
+    def __init__(self,Leistungen):
+        self.Leistungen = Leistungen
+
+class Tree:
+    def __init__(self,daten):
+        self.mainNode = Node()
+        self.daten = daten
+
+    def sortIntoNodes(self):
+        for falldatum,group in enumerate(daten.groupby('FallDatum')):
+
+    
+
 class Categorize:
 
     maxDist = 1
