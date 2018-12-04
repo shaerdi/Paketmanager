@@ -6,20 +6,49 @@ import pathlib
 import xlsxwriter
 from io import BytesIO
 import itertools
+from collections import defaultdict
 
 class Node:
-    children = []
-
     def __init__(self,Leistungen):
         self.Leistungen = Leistungen
+        self.count = 1
+        self.children = defaultdict(int)
+
+    def append(self, Leistungsset):
+        if self.Leistungen == Leistungsset:
+            self.count+=1
+            return True
+        else:
+            for child in self.children:
+                if child.append(Leistungsset):
+                    self.children[child] += 1
+                    return True
+        if self.Leistungen < Leistungsset:
+            self.children[Node(Leistungsset)] = 1
+            return True
+
+        return False
+
 
 class Tree:
     def __init__(self,daten):
-        self.mainNode = Node()
+        self.mainNode = Node(set())
         self.daten = daten
 
     def sortIntoNodes(self):
-        for falldatum,group in enumerate(daten.groupby('FallDatum')):
+        falldaten = []
+        for falldatum,group in daten.groupby('FallDatum'):
+            leistungsSet = set(group.Leistung.values)
+            falldaten.append(leistungsSet)
+        falldaten = sorted(falldaten, key=lambda x : len(x))
+        for f in falldaten:
+            self.mainNode.append(f)
+
+    def writeToExcel(self):
+        pass
+
+
+
 
     
 
