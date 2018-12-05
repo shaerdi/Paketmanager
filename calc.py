@@ -254,3 +254,22 @@ class Categorize:
 
 
         workbook.close()
+
+def doCalcs():
+    files = [
+            './Rohdaten/Q1-Q3_2018_Angio_alle.xlsx',
+            './Rohdaten/Q1-Q3_2018_Endo_alle.xlsx',
+            './Rohdaten/Q1-Q3_2018_Gastro_alle.xlsx',
+            './Rohdaten/Q1-Q3_2018_RangesPneumo_alle.xlsx',
+            ]
+
+    resultFilenames = [
+            l.replace('./Rohdaten/','').replace('.xlsx','') + '_Eingeteilt'
+            for l in files
+            ]
+
+    for f,r in zip(files,resultFilenames):
+        c = Categorize(f)
+        c.doCalc(20)
+        c.writeExcel(r)
+
