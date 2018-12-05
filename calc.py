@@ -19,6 +19,12 @@ class idCounter:
         self.count += 1
 
 
+def convertLeistung(l):
+    try:
+        return '{:07.4f}'.format(float(l))
+    except:
+        return str(l)
+
 class Categorize:
 
     maxDist = 1
@@ -26,7 +32,16 @@ class Categorize:
 
     def __init__(self, filename):
         self.filename=filename
-        self.daten = pd.read_csv(filename,sep=';')
+        if '.csv' in filename:
+            self.daten = pd.read_csv(filename,sep=';')
+        elif '.xlsx' in filename:
+            self.daten = pd.read_excel(
+                    filename,
+                    converters = {'Leistung':convertLeistung},
+                    )
+        else:
+            raise Exception("Konnte Datei nicht einlesen")
+
 
     def doCalc(self, nCluster = 8):
         self.buildKMeansMat()
