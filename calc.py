@@ -7,50 +7,17 @@ import xlsxwriter
 from io import BytesIO
 import itertools
 from collections import defaultdict
+from itertools import count
 
-class Node:
-    def __init__(self,Leistungen):
-        self.Leistungen = Leistungen
-        self.count = 1
-        self.children = defaultdict(int)
+counter = count()
 
-    def append(self, Leistungsset):
-        if self.Leistungen == Leistungsset:
-            self.count+=1
-            return True
-        else:
-            for child in self.children:
-                if child.append(Leistungsset):
-                    self.children[child] += 1
-                    return True
-        if self.Leistungen < Leistungsset:
-            self.children[Node(Leistungsset)] = 1
-            return True
+class idCounter:
+    def __init__(self):
+        self.id = next(counter)
+        self.count = 0
+    def increase(self):
+        self.count += 1
 
-        return False
-
-
-class Tree:
-    def __init__(self,daten):
-        self.mainNode = Node(set())
-        self.daten = daten
-
-    def sortIntoNodes(self):
-        falldaten = []
-        for falldatum,group in daten.groupby('FallDatum'):
-            leistungsSet = set(group.Leistung.values)
-            falldaten.append(leistungsSet)
-        falldaten = sorted(falldaten, key=lambda x : len(x))
-        for f in falldaten:
-            self.mainNode.append(f)
-
-    def writeToExcel(self):
-        pass
-
-
-
-
-    
 
 class Categorize:
 
@@ -98,7 +65,7 @@ class Categorize:
 
         self.fallKategorie = self.km.fit_predict(self.kMeansMat)
 
-    def buildGroups(self):
+    def buildGroups(self, restGruppe=False):
         daten = self.daten
         mm = self.kMeansMat.todense()
         fallKategorie = self.fallKategorie
@@ -107,10 +74,11 @@ class Categorize:
         falldaten = []
         maxKat = fallKategorie.max()+1
 
+        pakete = defaultdict(lambda : idCounter())
         for i,group in enumerate(daten.groupby('FallDatum')):
             k = fallKategorie[i]
             d = norm(km.cluster_centers_[k,:] - mm[i,:])
-            if d > self.maxDist:
+            if d > self.maxDist and restGruppe:
                 k = maxKat
             falldaten.append( {
                 'Falldatum' : group[0],
@@ -119,9 +87,24 @@ class Categorize:
                 'Leistungen' : group[1].Leistung.values,
                 } )
 
+            key = ''.join([
+                    str(l) for l in
+                    sorted(np.unique((group[1].Leistung.values)))
+                    ])
+            pakete[key].increase()
+
             # daten.loc[group[1].index,'Kategorie'] = fallKategorie[i]
             daten.loc[group[1].index,'Kategorie'] = k
             daten.loc[group[1].index,'Distanz'] = d
+            daten.loc[group[1].index,'paketID'] = pakete[key].id
+
+        for falldatum, group in daten.groupby('FallDatum'):
+            key = ''.join([
+                    str(l) for l in
+                    sorted(np.unique((group.Leistung.values)))
+                    ])
+            daten.loc[group.index,'Anzahl'] = pakete[key].count
+
 
         self.falldaten = sorted(
                 falldaten, 
@@ -207,6 +190,30 @@ class Categorize:
                 sheet.set_column(i,i,w)
         
         setColWidth(sheet1)
+
+        sheet = workbook.add_worksheet('Pakete_Alle_Kat')
+        sheet.write_row(
+                'A1', 
+                daten.columns.values,
+                title_format,
+                )
+        currentRow = 1
+        cycler = itertools.cycle( (cell_format1, cell_format2) )
+        for j,distGroup in daten.groupby('paketID'):
+            for k,fallGroup in distGroup.groupby('FallDatum'):
+                clr = next(cycler)
+                for colNum,colName in enumerate(distGroup.columns):
+                    sheet.write_column(
+                            currentRow,
+                            colNum,
+                            fallGroup[colName],
+                            clr
+                            )
+                break
+            currentRow += len(fallGroup)
+        setColWidth(sheet)
+
+
         for i,kategorieGroup in enumerate(daten.groupby('Kategorie')):
             sheet = workbook.add_worksheet('Pakete_Kat_{:02d}'.format(i))
             sheet.write_row(
@@ -216,7 +223,7 @@ class Categorize:
                     )
             currentRow = 1
             cycler = itertools.cycle( (cell_format1, cell_format2) )
-            for j,distGroup in kategorieGroup[1].groupby('Distanz'):
+            for j,distGroup in kategorieGroup[1].groupby('paketID'):
                 for k,fallGroup in distGroup.groupby('FallDatum'):
                     clr = next(cycler)
                     for colNum,colName in enumerate(distGroup.columns):
