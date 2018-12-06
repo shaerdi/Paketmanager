@@ -18,6 +18,26 @@ class idCounter:
     def increase(self):
         self.count += 1
 
+kategorien = [
+'15.0710',
+'15.0720',
+'15.0730',
+'15.0740',
+'15.0750',
+'13.0020',
+'15.0630',
+'15.0130',
+'15.0160',
+'15.0320',
+'15.0270',
+'15.0285',
+'15.0300',
+'15.0330',
+'15.0340',
+'16.0010',
+'19.0020',
+]
+
 
 def convertLeistung(l):
     try:
@@ -34,7 +54,7 @@ class Categorize:
         self.filename=filename
         if '.csv' in filename:
             self.daten = pd.read_csv(filename,sep=';')
-        elif '.xlsx' in filename:
+        elif '.xls' in filename:
             self.daten = pd.read_excel(
                     filename,
                     converters = {'Leistung':convertLeistung},
@@ -79,6 +99,117 @@ class Categorize:
                 )
 
         self.fallKategorie = self.km.fit_predict(self.kMeansMat)
+
+    def writePaketeToExcel(self, filename, directory = 'Resultate'):
+
+        fname = pathlib.Path('.') / directory / filename
+        fname = fname.with_suffix('.xlsx')
+
+
+        def setColWidth(sheet):
+            for i, w  in enumerate(lens):
+                sheet.set_column(i,i,w)
+
+        daten = self.daten
+
+        lens = [
+                1+max([len(str(s)) for s in daten[col].values] + [len(col)]) 
+                for col in daten.columns
+                ]
+
+        writer = pd.ExcelWriter(str(fname), engine='xlsxwriter')
+        daten.to_excel(writer, sheet_name='Rohdaten', index=False)
+        workbook = writer.book
+        sheet1 = writer.sheets['Rohdaten']
+
+        title_format = workbook.add_format()
+        title_format.set_bold()
+        title_format.set_bottom()
+
+        cell_format1 = workbook.add_format()
+        cell_format2 = workbook.add_format()
+        cell_format2.set_bg_color('#dddddd')
+
+        sheet_alle = workbook.add_worksheet('AllePakete')
+        counter_alle = 1
+        cycler_alle = itertools.cycle( (cell_format1, cell_format2) )
+
+        sheets = [workbook.add_worksheet(l) for l in kategorien]
+        sheets.append(workbook.add_worksheet('Restgruppe'))
+        sheets.append(workbook.add_worksheet('OhneTarmed'))
+        counters = [1 for l in kategorien] + 2*[1]
+        cycler = [
+                    itertools.cycle( (cell_format1, cell_format2) )
+                    for i in range(len(kategorien)+2)
+                 ] 
+
+
+        def getKatNum(group):
+            tarmedgroup = group[group.Leistungskategorie=='Tarmed']
+            leistungen = tarmedgroup.Leistung.values
+            if len(leistungen) == 0:
+                return len(kategorien)+1
+
+            for i,k in enumerate(kategorien):
+                if k in leistungen:
+                    return i
+            return i+1
+
+
+        def createKey(group):
+            tarmedgroup = group[group.Leistungskategorie=='Tarmed']
+            key = ''.join([
+                    str(l) for l in
+                    sorted(np.unique((tarmedgroup.Leistung.values)))
+                    ])
+            return key
+        
+        pakete = defaultdict(lambda : idCounter())
+        for falldatum, group in daten.groupby('FallDatum'):
+            key = createKey(group)
+            pakete[key].increase()
+            daten.loc[group.index,'paketID'] = pakete[key].id
+
+        for falldatum, group in daten.groupby('FallDatum'):
+            key = createKey(group)
+            daten.loc[group.index,'Anzahl'] = pakete[key].count
+
+
+        for sheet in [sheet_alle] + sheets:
+            sheet.write_row(
+                    'A1', 
+                    daten.columns.values,
+                    title_format,
+                    )
+            setColWidth(sheet)
+
+        daten=daten.sort_values(['Anzahl','Leistungskategorie'], ascending=False)
+
+        for j,distGroup in daten.groupby('paketID',sort=False):
+            for k,fallGroup in distGroup.groupby('FallDatum'):
+                katnum = getKatNum(fallGroup)
+                clr = next(cycler[katnum])
+                clr_alle = next(cycler_alle)
+                sheet = sheets[katnum]
+                currentRow = counters[katnum]
+                for colNum,colName in enumerate(distGroup.columns):
+                    sheet.write_column(
+                            currentRow,
+                            colNum,
+                            fallGroup[colName],
+                            clr
+                            )
+                    sheet_alle.write_column(
+                            counter_alle,
+                            colNum,
+                            fallGroup[colName],
+                            clr
+                            )
+                break
+            counters[katnum] += len(fallGroup)
+            counter_alle += len(fallGroup)
+        
+        workbook.close()
 
     def buildGroups(self, restGruppe=False):
         daten = self.daten
