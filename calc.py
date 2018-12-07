@@ -101,6 +101,41 @@ class Categorize:
         self.fallKategorie = self.km.fit_predict(self.kMeansMat)
 
     def writePaketeToExcel(self, filename, directory = 'Resultate'):
+        daten = self.daten
+        def getKatNum(group):
+            tarmedgroup = group[group.Leistungskategorie=='Tarmed']
+            leistungen = tarmedgroup.Leistung.values
+            if len(leistungen) == 0:
+                return len(kategorien)+1
+
+            for i,k in enumerate(kategorien):
+                if k in leistungen:
+                    return i
+            return i+1
+
+
+        def createKey(group):
+            tarmedgroup = group[group.Leistungskategorie=='Tarmed']
+            key = ''.join([
+                    str(l) for l in
+                    sorted(np.unique((tarmedgroup.Leistung.values)))
+                    ])
+            return key
+        
+        pakete = defaultdict(lambda : idCounter())
+        for falldatum, group in daten.groupby('FallDatum'):
+            key = createKey(group)
+            pakete[key].increase()
+            daten.loc[group.index,'paketID'] = pakete[key].id
+
+        for falldatum, group in daten.groupby('FallDatum'):
+            key = createKey(group)
+            daten.loc[group.index,'Anzahl'] = pakete[key].count
+
+
+        daten=daten.sort_values(['Anzahl','Leistungskategorie'], ascending=False)
+
+        ## EXCEL
 
         fname = pathlib.Path('.') / directory / filename
         fname = fname.with_suffix('.xlsx')
@@ -110,7 +145,6 @@ class Categorize:
             for i, w  in enumerate(lens):
                 sheet.set_column(i,i,w)
 
-        daten = self.daten
 
         lens = [
                 1+max([len(str(s)) for s in daten[col].values] + [len(col)]) 
@@ -144,37 +178,6 @@ class Categorize:
                  ] 
 
 
-        def getKatNum(group):
-            tarmedgroup = group[group.Leistungskategorie=='Tarmed']
-            leistungen = tarmedgroup.Leistung.values
-            if len(leistungen) == 0:
-                return len(kategorien)+1
-
-            for i,k in enumerate(kategorien):
-                if k in leistungen:
-                    return i
-            return i+1
-
-
-        def createKey(group):
-            tarmedgroup = group[group.Leistungskategorie=='Tarmed']
-            key = ''.join([
-                    str(l) for l in
-                    sorted(np.unique((tarmedgroup.Leistung.values)))
-                    ])
-            return key
-        
-        pakete = defaultdict(lambda : idCounter())
-        for falldatum, group in daten.groupby('FallDatum'):
-            key = createKey(group)
-            pakete[key].increase()
-            daten.loc[group.index,'paketID'] = pakete[key].id
-
-        for falldatum, group in daten.groupby('FallDatum'):
-            key = createKey(group)
-            daten.loc[group.index,'Anzahl'] = pakete[key].count
-
-
         for sheet in [sheet_alle] + sheets:
             sheet.write_row(
                     'A1', 
@@ -182,8 +185,6 @@ class Categorize:
                     title_format,
                     )
             setColWidth(sheet)
-
-        daten=daten.sort_values(['Anzahl','Leistungskategorie'], ascending=False)
 
         for j,distGroup in daten.groupby('paketID',sort=False):
             for k,fallGroup in distGroup.groupby('FallDatum'):
