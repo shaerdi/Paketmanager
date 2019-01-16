@@ -1,407 +1,202 @@
+###############################################################################
+# Benoetigte Module
+###############################################################################
 import pandas as pd
-from scipy import sparse
-from sklearn.cluster import KMeans
-from scipy.linalg import norm
 import pathlib
 import xlsxwriter
-from io import BytesIO
-import itertools
 from collections import defaultdict
-from itertools import count
 
-counter = count()
 
+###############################################################################
+# Hilfsfunktionen
+###############################################################################
 class idCounter:
+    """Zaehler fuer die Paketnummern
+    """
+    counter = 0
     def __init__(self):
-        self.id = next(counter)
+        self.id = idCounter.counter
+        idCounter.counter += 1
         self.count = 0
     def increase(self):
         self.count += 1
 
-kategorien = [
-'15.0710',
-'15.0720',
-'15.0730',
-'15.0740',
-'15.0750',
-'13.0020',
-'15.0630',
-'15.0130',
-'15.0160',
-'15.0320',
-'15.0270',
-'15.0285',
-'15.0300',
-'15.0330',
-'15.0340',
-'16.0010',
-'19.0020',
-]
-
-
 def convertLeistung(l):
+    """Macht aus einer Zahl eine Buchstabenfolge (String)
+
+    :returns: Den string im Format xx.xxxx
+    """
     try:
         return '{:07.4f}'.format(float(l))
     except:
         return str(l)
 
-class Categorize:
+def datenEinlesen(dateiname):
+    """Liest ein Excel ein
 
-    maxDist = 1
-    randomseed = 5
+    :returns: Ein pandas Objekt mit allen Daten im ersten Sheet des Excels und
+    eine Liste mit den Kategorien aus dem zweiten Sheet des Excels
 
-    def __init__(self, filename):
-        self.filename=filename
-        if '.csv' in filename:
-            self.daten = pd.read_csv(filename,sep=';')
-        elif '.xls' in filename:
-            self.daten = pd.read_excel(
-                    filename,
-                    converters = {'Leistung':convertLeistung},
-                    )
-        else:
-            raise Exception("Konnte Datei nicht einlesen")
-
-
-    def doCalc(self, nCluster = 8):
-        self.buildKMeansMat()
-        self.fitKmeans(nCluster)
-        self.buildGroups()
-
-
-    def getLeistungen(self):
-        datenNurTarmed = self.daten[self.daten.Leistungskategorie == 'Tarmed']
-        leistungen = np.unique(datenNurTarmed.Leistung)
-        return leistungen
-
-    def buildKMeansMat(self):
-
-        daten = self.daten
-        leistungen = self.getLeistungen()
-
-        iIndex = []
-        jIndex = []
-        for i,group in enumerate(daten.groupby('FallDatum')):
-            for j,leistung in enumerate(leistungen):
-                if leistung in group[1].Leistung.values:
-                    iIndex.append(i)
-                    jIndex.append(j)
-        daten = np.ones(len(iIndex))
-        self.kMeansMat = sparse.coo_matrix( (daten, (iIndex,jIndex) ) )
-
-    def fitKmeans(self, nCluster = 8):
-
-        self.km = KMeans(n_clusters = nCluster, 
-                init='k-means++',
-                max_iter = 100,
-                n_init=1,
-                random_state=self.randomseed,
+    """
+    if '.xls' in dateiname:
+        daten = pd.read_excel(
+                dateiname,
+                converters = {'Leistung':convertLeistung},
                 )
-
-        self.fallKategorie = self.km.fit_predict(self.kMeansMat)
-
-    def writePaketeToExcel(self, filename, directory = 'Resultate'):
-        daten = self.daten
-        def getKatNum(group):
-            tarmedgroup = group[group.Leistungskategorie=='Tarmed']
-            leistungen = tarmedgroup.Leistung.values
-            if len(leistungen) == 0:
-                return len(kategorien)+1
-
-            for i,k in enumerate(kategorien):
-                if k in leistungen:
-                    return i
-            return i+1
-
-
-        def createKey(group):
-            tarmedgroup = group[group.Leistungskategorie=='Tarmed']
-            key = ''.join([
-                    str(l) for l in
-                    sorted(np.unique((tarmedgroup.Leistung.values)))
-                    ])
-            return key
-        
-        pakete = defaultdict(lambda : idCounter())
-        for falldatum, group in daten.groupby('FallDatum'):
-            key = createKey(group)
-            pakete[key].increase()
-            daten.loc[group.index,'paketID'] = pakete[key].id
-
-        for falldatum, group in daten.groupby('FallDatum'):
-            key = createKey(group)
-            daten.loc[group.index,'Anzahl'] = pakete[key].count
-
-
-        daten=daten.sort_values(['Anzahl','Leistungskategorie'], ascending=False)
-
-        ## EXCEL
-
-        fname = pathlib.Path('.') / directory / filename
-        fname = fname.with_suffix('.xlsx')
-
-
-        def setColWidth(sheet):
-            for i, w  in enumerate(lens):
-                sheet.set_column(i,i,w)
-
-
-        lens = [
-                1+max([len(str(s)) for s in daten[col].values] + [len(col)]) 
-                for col in daten.columns
-                ]
-
-        writer = pd.ExcelWriter(str(fname), engine='xlsxwriter')
-        daten.to_excel(writer, sheet_name='Rohdaten', index=False)
-        workbook = writer.book
-        sheet1 = writer.sheets['Rohdaten']
-
-        title_format = workbook.add_format()
-        title_format.set_bold()
-        title_format.set_bottom()
-
-        cell_format1 = workbook.add_format()
-        cell_format2 = workbook.add_format()
-        cell_format2.set_bg_color('#dddddd')
-
-        sheet_alle = workbook.add_worksheet('AllePakete')
-        counter_alle = 1
-        cycler_alle = itertools.cycle( (cell_format1, cell_format2) )
-
-        sheets = [workbook.add_worksheet(l) for l in kategorien]
-        sheets.append(workbook.add_worksheet('Restgruppe'))
-        sheets.append(workbook.add_worksheet('OhneTarmed'))
-        counters = [1 for l in kategorien] + 2*[1]
-        cycler = [
-                    itertools.cycle( (cell_format1, cell_format2) )
-                    for i in range(len(kategorien)+2)
-                 ] 
-
-
-        for sheet in [sheet_alle] + sheets:
-            sheet.write_row(
-                    'A1', 
-                    daten.columns.values,
-                    title_format,
-                    )
-            setColWidth(sheet)
-
-        for j,distGroup in daten.groupby('paketID',sort=False):
-            for k,fallGroup in distGroup.groupby('FallDatum'):
-                katnum = getKatNum(fallGroup)
-                clr = next(cycler[katnum])
-                clr_alle = next(cycler_alle)
-                sheet = sheets[katnum]
-                currentRow = counters[katnum]
-                for colNum,colName in enumerate(distGroup.columns):
-                    sheet.write_column(
-                            currentRow,
-                            colNum,
-                            fallGroup[colName],
-                            clr
-                            )
-                    sheet_alle.write_column(
-                            counter_alle,
-                            colNum,
-                            fallGroup[colName],
-                            clr
-                            )
-                break
-            counters[katnum] += len(fallGroup)
-            counter_alle += len(fallGroup)
-        
-        workbook.close()
-
-    def buildGroups(self, restGruppe=False):
-        daten = self.daten
-        mm = self.kMeansMat.todense()
-        fallKategorie = self.fallKategorie
-        km = self.km
-
-        falldaten = []
-        maxKat = fallKategorie.max()+1
-
-        pakete = defaultdict(lambda : idCounter())
-        for i,group in enumerate(daten.groupby('FallDatum')):
-            k = fallKategorie[i]
-            d = norm(km.cluster_centers_[k,:] - mm[i,:])
-            if d > self.maxDist and restGruppe:
-                k = maxKat
-            falldaten.append( {
-                'Falldatum' : group[0],
-                'Kategorie' : k,
-                'Distanz' : d,
-                'Leistungen' : group[1].Leistung.values,
-                } )
-
-            key = ''.join([
-                    str(l) for l in
-                    sorted(np.unique((group[1].Leistung.values)))
-                    ])
-            pakete[key].increase()
-
-            # daten.loc[group[1].index,'Kategorie'] = fallKategorie[i]
-            daten.loc[group[1].index,'Kategorie'] = k
-            daten.loc[group[1].index,'Distanz'] = d
-            daten.loc[group[1].index,'paketID'] = pakete[key].id
-
-        for falldatum, group in daten.groupby('FallDatum'):
-            key = ''.join([
-                    str(l) for l in
-                    sorted(np.unique((group.Leistung.values)))
-                    ])
-            daten.loc[group.index,'Anzahl'] = pakete[key].count
-
-
-        self.falldaten = sorted(
-                falldaten, 
-                key = lambda tup: (tup['Kategorie'], tup['Distanz'])
+        kategorien = pd.read_excel(
+                dateiname,
+                sheet_name=1,
+                converters = {0:convertLeistung},
                 )
-
-    def plotKategorie(self):
-
-        colorPalette = sns.color_palette()
-        daten = self.daten
-
-        leistungen = sorted(np.unique(daten.Leistung.values))
-        x = []
-        y = []
-        color = []
-        counter = 0
-        for falldatum in self.falldaten:
-            yi = []
-            for leistung in falldatum['Leistungen']:
-                yi.append(leistungen.index(leistung))
-            y.extend(yi)
-            x.extend( (counter * np.ones(len(yi))).tolist() )
-            colors = len(yi) * [colorPalette[falldatum['Kategorie'] % 8]]
-            # color.extend((falldatum['Kategorie'] * np.ones(len(yi))).tolist() )
-            color.extend( colors )
-            counter += 1
-
-        f,ax = plt.subplots(figsize=(18,10))
-        ax.scatter(x,y,c=color,cmap=sns.color_palette())
-        ax.set_xlabel('Falldatum')
-        ax.set_ylabel('Leistung')
-
-        ax.axhline(len(self.getLeistungen())+0.5, color='k',linestyle=':')
-        return f,ax
-
-    def saveResults(self, directory='Resultate'):
-        path = pathlib.Path(self.filename)
-        f,ax = self.plotKategorie()
-
-        picPath = path.parent / directory / (path.stem + "_Bild")
-        f.savefig(str(picPath.with_suffix('.png')))
-
-        csvPath = path.parent  / directory / (path.stem + "_Eingeteilt")
-        daten.to_csv( str(csvPath.with_suffix('.csv')),sep=';',index=False)
-
-    def writeExcel(self,fname, directory='Resultate'):
-
-        fname = pathlib.Path('.') / directory / fname
-        fname = fname.with_suffix('.xlsx')
-
-        daten = self.daten
-        writer = pd.ExcelWriter(str(fname), engine='xlsxwriter')
-        daten.to_excel(writer, sheet_name='Rohdaten', index=False)
-        workbook = writer.book
-        sheet1 = writer.sheets['Rohdaten']
-
-        f,ax = self.plotKategorie()
-        imgdata = BytesIO()
-        f.savefig(imgdata, format='png')
-        imgdata.seek(0)
-
-        sheet2 = workbook.add_worksheet('Bild')
-        sheet2.insert_image("A1", "", options= {'image_data': imgdata})
-        plt.close(f)
+        return daten,kategorien.values.flatten()
+    else:
+        print("Die Datei hat nicht die Endung .xls(x)")
 
 
-        title_format = workbook.add_format()
-        title_format.set_bold()
-        title_format.set_bottom()
+def leistungenFiltern(daten):
+    """Filtert die Daten, so dass nur noch Zeilen mit der Kategorie Tarmed
+    vorhanden sind
 
-        cell_format1 = workbook.add_format()
-        cell_format2 = workbook.add_format()
-        cell_format2.set_bg_color('#dddddd')
+    :daten: Pandas Objekt mit Daten
+    :returns: Gefilterte Daten
+
+    """
+    datenNurTarmed = daten[daten.Leistungskategorie == 'Tarmed']
+    leistungen = np.unique(datenNurTarmed.Leistung)
+    return leistungen
+
+def getKategorie(group, kategorien):
+    """Sucht die Kategorie einer Gruppe
+    """
+    tarmedgroup = group[group.Leistungskategorie=='Tarmed']
+    leistungen = tarmedgroup.Leistung.values
+    if len(leistungen) == 0:
+        return 'OhneTarmed'
+
+    for k in kategorien:
+        if k in leistungen:
+            return k
+    return 'Restgruppe'
 
 
-        lens = [
-                1+max([len(str(s)) for s in daten[col].values] + [len(col)]) 
-                for col in daten.columns
-                ]
+def createKey(group):
+    """Baut eine Gruppen ID
 
-        def setColWidth(sheet):
-            for i, w  in enumerate(lens):
-                sheet.set_column(i,i,w)
+    Die ID ist ein langer String mit allen Leistungsnummer sortiert
+    aneinandergehaengt.
+    """
+    tarmedgroup = group[group.Leistungskategorie=='Tarmed']
+    key = ''.join([
+            str(l) for l in
+            sorted(np.unique((tarmedgroup.Leistung.values)))
+            ])
+    return key
+
+def sheetSchreiben(sheetname, daten, writer):
+    """Schreibt Daten in ein neues sheet in einem Excel
+    """
+    # Daten schreiben
+    daten.to_excel(writer,sheet_name=sheetname, index=False)
+
+    # Zeilen nach paketID abwechselnd faerben
+    paketID = daten['paketID'].values
+    paketIDwechsel = 1 * (np.absolute(np.diff(paketID)) > 0)
+    paketIDwechsel = np.hstack(([0],paketIDwechsel))
+    paketIDwechsel[ np.where(paketIDwechsel)[0][1::2] ] = -1
+    graueZeilen = np.where(np.cumsum(paketIDwechsel))[0] + 1
+    sheet = writer.sheets[sheetname]
+    workbook = writer.book
+    cell_format_grey = workbook.add_format({'bg_color':'#dddddd'})
+    for zeile in graueZeilen:
+        sheet.set_row(zeile,None,cell_format_grey)
+
+def getFirstGroup(groups):
+    for i,g in groups:
+        return g
+###############################################################################
+# Hauptfunktion, geht alle Leistungen durch und schreibt sie in ein Excel
+###############################################################################
+def writePaketeToExcel(daten, kategorien, filename, ordner = 'Resultate'):
+    """Schreibt die Pakete in ein neues Excel
+
+    :daten: Pandas objekt mit allen Daten
+    :kategorien: Liste mit den Kategorien
+    :filename: Filename der neuen Resultatdatei
+    :ordner: Ordner, in dem das Resultat gespeichert wird
+    """
+
+    idCounter.counter=0
+    pakete = defaultdict(lambda : idCounter())
+
+    # Erster Durchgang:
+    # Die Daten werden nach FallDatum gruppiert, und jede Gruppe wird in die
+    # Pakete einsortiert.
+    for falldatum, group in daten.groupby('FallDatum'):
+        key = createKey(group)
+        pakete[key].increase()
+        daten.loc[group.index,'paketID'] = pakete[key].id
+        daten.loc[group.index,'kategorie'] = getKategorie(group,kategorien)
+
+    # Zweiter Durchgang:
+    # Die Anzahl jedes Pakets wird in die entsprechende Zeile geschrieben
+    for falldatum, group in daten.groupby('FallDatum'):
+        key = createKey(group)
+        daten.loc[group.index,'Anzahl'] = pakete[key].count
+
+
+    # Daten absteigend nach Anzahl sortieren
+    daten=daten.sort_values(['Anzahl','Leistungskategorie'], ascending=False)
+
+    #############################################
+    # Ab jetzt der Code um das Excel zu schreiben
+    #############################################
+
+    # Pfad zur Resultatdatei
+    fname = pathlib.Path('.') / ordner / filename
+    fname = fname.with_suffix('.xlsx')
+
+    # Ordner erstellen, wenn es ihn noch nicht gibt
+    if not fname.parent.exists():
+        fname.parent.mkdir()
         
-        setColWidth(sheet1)
+    # Excel erstellen
+    writer = pd.ExcelWriter(str(fname), engine='xlsxwriter')
+    workbook = writer.book
 
-        sheet = workbook.add_worksheet('Pakete_Alle_Kat')
-        sheet.write_row(
-                'A1', 
-                daten.columns.values,
-                title_format,
-                )
-        currentRow = 1
-        cycler = itertools.cycle( (cell_format1, cell_format2) )
-        for j,distGroup in daten.groupby('paketID'):
-            for k,fallGroup in distGroup.groupby('FallDatum'):
-                clr = next(cycler)
-                for colNum,colName in enumerate(distGroup.columns):
-                    sheet.write_column(
-                            currentRow,
-                            colNum,
-                            fallGroup[colName],
-                            clr
-                            )
-                break
-            currentRow += len(fallGroup)
-        setColWidth(sheet)
+    ## Daten Schreiben
+    # Rohdaten
+    daten.drop(['kategorie'],axis=1).to_excel(
+            writer, sheet_name='Rohdaten', index=False
+            )
 
+    # Alle Pakete, jeweils die erste Fallnummer im entsprechenden Paket
+    allePakete = pd.concat(sorted([
+            getFirstGroup(g[1].groupby('FallDatum',sort=False))
+            for g in daten.drop('kategorie',axis=1).groupby('paketID',sort=False)
+            ],
+            key = lambda x : x.Anzahl.max(), reverse = True
+            ))
+    sheetSchreiben('AllePakete', allePakete ,writer)
 
-        for i,kategorieGroup in enumerate(daten.groupby('Kategorie')):
-            sheet = workbook.add_worksheet('Pakete_Kat_{:02d}'.format(i))
-            sheet.write_row(
-                    'A1', 
-                    kategorieGroup[1].columns.values,
-                    title_format,
-                    )
-            currentRow = 1
-            cycler = itertools.cycle( (cell_format1, cell_format2) )
-            for j,distGroup in kategorieGroup[1].groupby('paketID'):
-                for k,fallGroup in distGroup.groupby('FallDatum'):
-                    clr = next(cycler)
-                    for colNum,colName in enumerate(distGroup.columns):
-                        sheet.write_column(
-                                currentRow,
-                                colNum,
-                                fallGroup[colName],
-                                clr
-                                )
-                    break
-                currentRow += len(fallGroup)
-            setColWidth(sheet)
+    # Pro Kategorie
+    for kategorie in kategorien.tolist() + ['Restgruppe','OhneTarmed']:
+        katData = daten[daten['kategorie']==kategorie].drop('kategorie',axis=1)
+        katData = pd.concat(sorted([
+            getFirstGroup(g[1].groupby('FallDatum',sort=False))
+            for g in katData.groupby('paketID',sort=False)
+            ],
+            key = lambda x : x.Anzahl.max(), reverse = True
+            ))
+        sheetSchreiben(kategorie,katData,writer)
+
+    workbook.close()
 
 
-        workbook.close()
-
-def doCalcs():
-    files = [
-            './Rohdaten/Q1-Q3_2018_Angio_alle.xlsx',
-            './Rohdaten/Q1-Q3_2018_Endo_alle.xlsx',
-            './Rohdaten/Q1-Q3_2018_Gastro_alle.xlsx',
-            './Rohdaten/Q1-Q3_2018_RangesPneumo_alle.xlsx',
-            ]
-
-    resultFilenames = [
-            l.replace('./Rohdaten/','').replace('.xlsx','') + '_Eingeteilt'
-            for l in files
-            ]
-
-    for f,r in zip(files,resultFilenames):
-        c = Categorize(f)
-        c.doCalc(20)
-        c.writeExcel(r)
+def excelBearbeiten(
+        inputDatei,
+        resultatDatei,
+        ordner = 'Resultate',
+        ) :
+    daten,kategorien = datenEinlesen(inputDatei)
+    writePaketeToExcel(daten, kategorien, resultatDatei, ordner)
 
