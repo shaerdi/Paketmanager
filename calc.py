@@ -1,6 +1,7 @@
 ###############################################################################
 # Benoetigte Module
 ###############################################################################
+import numpy as np
 import pandas as pd
 import pathlib
 import xlsxwriter
@@ -43,12 +44,21 @@ def datenEinlesen(dateiname):
                 dateiname,
                 converters = {'Leistung':convertLeistung},
                 )
-        kategorien = pd.read_excel(
-                dateiname,
-                sheet_name=1,
-                converters = {0:convertLeistung},
-                )
-        return daten,kategorien.values.flatten()
+        try:
+            kategorien = pd.read_excel(
+                    dateiname,
+                    sheet_name=1,
+                    converters = {0:convertLeistung},
+                    header = None,
+                    )
+            kategorien = kategorien.values.flatten()
+            print("Verwende Kategorien:")
+            for k in kategorien:
+                print(k)
+        except IndexError:
+            print("Keine Kategorien gefunden. Gibt es ein zweites Sheet in der Datei {}?".format(dateiname))
+            return
+        return daten,kategorien
     else:
         print("Die Datei hat nicht die Endung .xls(x)")
 
@@ -89,6 +99,7 @@ def createKey(group):
     key = ''.join([
             str(l) for l in
             sorted(np.unique((tarmedgroup.Leistung.values)))
+            #sorted((tarmedgroup.Leistung.values))
             ])
     return key
 
@@ -181,15 +192,19 @@ def writePaketeToExcel(daten, kategorien, filename, ordner = 'Resultate'):
     # Pro Kategorie
     for kategorie in kategorien.tolist() + ['Restgruppe','OhneTarmed']:
         katData = daten[daten['kategorie']==kategorie].drop('kategorie',axis=1)
-        katData = pd.concat(sorted([
-            getFirstGroup(g[1].groupby('FallDatum',sort=False))
-            for g in katData.groupby('paketID',sort=False)
-            ],
-            key = lambda x : x.Anzahl.max(), reverse = True
-            ))
-        sheetSchreiben(kategorie,katData,writer)
+        try:
+            katData = pd.concat(sorted([
+                getFirstGroup(g[1].groupby('FallDatum',sort=False))
+                for g in katData.groupby('paketID',sort=False)
+                ],
+                key = lambda x : x.Anzahl.max(), reverse = True
+                ))
+            sheetSchreiben(kategorie,katData,writer)
+        except ValueError:
+            pass
 
     workbook.close()
+    return pakete,daten
 
 
 def excelBearbeiten(
@@ -197,6 +212,38 @@ def excelBearbeiten(
         resultatDatei,
         ordner = 'Resultate',
         ) :
-    daten,kategorien = datenEinlesen(inputDatei)
-    writePaketeToExcel(daten, kategorien, resultatDatei, ordner)
+    result = datenEinlesen(inputDatei)
+    if result is None:
+        return
+    daten,kategorien = result
+    pakete,daten = writePaketeToExcel(daten, kategorien, resultatDatei, ordner)
+    pkts = []
+    for pid, paket in pakete.items():
+        p = paket
+        p.key = pid
+        pkts.append(p)
+    return pkts,daten
 
+
+
+# Beispiel fuer das Filtern von Paketen
+"""    
+pakete = excelBearbeiten('./Rohdaten/2018.12.05_Q1-3_2018_Pneumo.xls', 'ollipolli')
+
+# pakete ist eine Liste mit allen Paketen
+#Jedes Paket hat
+#    paket.id => Paketnummer im Excel
+#    paket.count => Anzahl vorkommen
+#    paket.key => String mit allen Leistunen im Paket aneinandergehaengt
+
+# Um pakete zu filtern, Beispiel:
+gefilterteListe = [] # Leere Liste zu Beginn
+for paket in pakete: # fuer jedes paket in der liste
+    if '00.0010' in paket.key and '00.0020' in paket.key and not '00.0050' in paket.key:
+        gefilterteListe.append(paket)
+
+# in gefilterter Liste sind jetyt alle pakete die diese bedingung erfuellen
+# zum Ausgeben ihrer excel id:
+for paket in gefilterteListe:
+    print(paket.id)
+"""
