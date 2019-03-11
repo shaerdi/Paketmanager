@@ -13,6 +13,8 @@ import wx
 import wx.lib.mixins.listctrl
 from collections import OrderedDict
 from ExcelCalc import datenEinlesen, createPakete
+import pickle
+import pathlib
 
 class Log:
     r"""\brief Needed by the wxdemos.
@@ -47,6 +49,15 @@ class DatenStruktur:
                 }
         self.aktiv = 'abc'
 
+    def saveToFile(self,path):
+        with path.with_suffix('.tpf').open('wb') as f:
+            pickle.dump(self.regeln, f)
+
+    def openFromFile(self,path):
+        with path.with_suffix('.tpf').open('rb') as f:
+            self.regeln = pickle.load(f)
+        self.updateListen()
+
     def setAktiv(self,name):
         self.aktiv=name
 
@@ -55,6 +66,9 @@ class DatenStruktur:
 
     def deleteRegel(self,name):
         self.regeln.pop(name)
+
+    def clearRegeln(self):
+        self.regeln = OrderedDict()
 
     def addRegel(self,name):
         if name in self.regeln:
@@ -66,7 +80,13 @@ class DatenStruktur:
     def deleteItem(self,titel,item):
         if not titel in ['and','or','not']:
             return
-        self.regeln[self.aktiv].remove(item)
+        self.regeln[self.aktiv][titel].remove(item)
+
+    def clearItems(self, titel):
+        if not titel in ['and','or','not']:
+            return
+        self.regeln[self.aktiv][titel] = []
+
 
     def addItem(self,titel,item):
         if not titel in ['and','or','not']:
@@ -255,15 +275,15 @@ class RegelPanel(ListePanel):
         index = self.listbox.GetFirstSelected()
         if index >= 0:
             item = self.listbox.GetItem(index).GetText()
-            self.daten.deleteRegel(item)
+            self.daten.deleteItem(item)
             self.daten.updateListen()
             self.setFocus(index)
 
     def ClrItem(self, event):
-        self.daten.regeln = {}
+        self.daten.clearRegeln()
         self.updateAktiv()
 
-class BedinungsPanel(ListePanel):
+class BedingungsPanel(ListePanel):
     def __init__(self, *args, **kwargs):
         self.titel = kwargs.get('titel','').lower()
         super().__init__(*args,**kwargs)
@@ -286,12 +306,19 @@ class BedinungsPanel(ListePanel):
             self.listbox.update()
 
     def DelItem(self, event):
-        sel = self.listbox.GetSelection()
-        if sel != -1:
-            self.listbox.Delete(sel)
+        index = self.listbox.GetFirstSelected()
+        itemsToDelete = []
+        while index >= 0:
+            itemsToDelete.append(self.listbox.GetItem(index).GetText())
+            index = self.listbox.GetNextSelected(index)
+
+        for item in itemsToDelete:
+            self.daten.deleteItem(self.titel, item)
+        self.daten.updateListen()
 
     def ClrItem(self, event):
-        self.listbox.Clear()
+        self.daten.clearItems(self.titel)
+        self.daten.updateListen()
 
 
 class TarmedpaketGUI(wx.Frame):
@@ -316,9 +343,31 @@ class TarmedpaketGUI(wx.Frame):
     def SetupEvents(self):
         self.Bind(wx.EVT_CLOSE, self.OnCloseFrame)
         self.Bind(wx.EVT_MENU, self.OnCloseFrame, self.fileMenuExitItem)
+        self.Bind(wx.EVT_MENU, self.OnSaveRule, self.fileMenuSaveRule)
+        self.Bind(wx.EVT_MENU, self.OnLoadRule, self.fileMenuLoadRule)
 
     def OnExitApp(self, event):
         self.Destroy()
+
+    def OnSaveRule(self, event):
+        saveFileDialog = wx.FileDialog(self, "Speichern unter", "", "", 
+                                      "TarmedPaketGUI files (*.tpf)|*.tpf", 
+                                       wx.FD_SAVE,
+                                       )
+        saveFileDialog.ShowModal()
+        filePath = pathlib.Path(saveFileDialog.GetPath())
+        saveFileDialog.Destroy()
+        self.daten.saveToFile(filePath)
+
+    def OnLoadRule(self, event):
+        openFileDialog = wx.FileDialog(self, "Öffnen", "", "", 
+                                      "TarmedPaketGUI files (*.tpf)|*.tpf", 
+                                       wx.FD_OPEN | wx.FD_FILE_MUST_EXIST,
+                                       )
+        openFileDialog.ShowModal()
+        filePath = pathlib.Path(openFileDialog.GetPath())
+        openFileDialog.Destroy()
+        self.daten.openFromFile(filePath)
 
     def OnCloseFrame(self, event):
         self.OnExitApp(event)
@@ -392,9 +441,9 @@ class TarmedpaketGUI(wx.Frame):
         
         # tc = wx.TextCtrl(panel)
         pl = RegelPanel(panel, titel='Regel', daten=self.daten)
-        pl1 = BedinungsPanel(panel, titel='AND', daten=self.daten)
-        pl2 = BedinungsPanel(panel, titel='OR', daten=self.daten)
-        pl3 = BedinungsPanel(panel, titel='NOT', daten=self.daten)
+        pl1 = BedingungsPanel(panel, titel='AND', daten=self.daten)
+        pl2 = BedingungsPanel(panel, titel='OR', daten=self.daten)
+        pl3 = BedingungsPanel(panel, titel='NOT', daten=self.daten)
         ruleBoxSizer.Add(pl, proportion=1,flag=wx.EXPAND|wx.ALL, border=15)
         ruleBoxSizer.Add(pl1, proportion=1,flag=wx.EXPAND|wx.ALL, border=15)
         ruleBoxSizer.Add(pl2, proportion=1,flag=wx.EXPAND|wx.ALL, border=15)
