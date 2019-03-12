@@ -127,15 +127,7 @@ def getFirstGroup(groups):
 ###############################################################################
 # Hauptfunktion, geht alle Leistungen durch und schreibt sie in ein Excel
 ###############################################################################
-def writePaketeToExcel(daten, kategorien, filename, ordner = 'Resultate'):
-    """Schreibt die Pakete in ein neues Excel
-
-    :daten: Pandas objekt mit allen Daten
-    :kategorien: Liste mit den Kategorien
-    :filename: Filename der neuen Resultatdatei
-    :ordner: Ordner, in dem das Resultat gespeichert wird
-    """
-
+def createPakete(daten,kategorien):
     idCounter.counter=0
     pakete = defaultdict(lambda : idCounter())
 
@@ -157,6 +149,18 @@ def writePaketeToExcel(daten, kategorien, filename, ordner = 'Resultate'):
 
     # Daten absteigend nach Anzahl sortieren
     daten=daten.sort_values(['Anzahl','Leistungskategorie'], ascending=False)
+
+    return daten,pakete
+
+
+def writePaketeToExcel(daten, kategorien, pakete, filename, ordner = 'Resultate'):
+    """Schreibt die Pakete in ein neues Excel
+
+    :daten: Pandas objekt mit allen Daten
+    :kategorien: Liste mit den Kategorien
+    :filename: Filename der neuen Resultatdatei
+    :ordner: Ordner, in dem das Resultat gespeichert wird
+    """
 
     #############################################
     # Ab jetzt der Code um das Excel zu schreiben
@@ -216,7 +220,8 @@ def excelBearbeiten(
     if result is None:
         return
     daten,kategorien = result
-    pakete,daten = writePaketeToExcel(daten, kategorien, resultatDatei, ordner)
+    pakete,daten = createPakete(daten,kategorien)
+    writePaketeToExcel(daten, kategorien, pakete, resultatDatei, ordner)
     pkts = []
     for pid, paket in pakete.items():
         p = paket

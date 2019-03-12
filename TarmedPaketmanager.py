@@ -29,6 +29,8 @@ class Log:
 
 class DatenStruktur:
     Listen = []
+    pakete = []
+    kategorie = []
 
     def __init__(self):
         self.regeln = OrderedDict()
@@ -48,6 +50,13 @@ class DatenStruktur:
                 'not' : ['5'],
                 }
         self.aktiv = 'abc'
+
+    def readExcel(self, filePath):
+        result = datenEinlesen(filePath)
+        if result is None:
+            return
+        daten,kategorien = result
+        self.pakete,self.daten = createPakete(daten, kategorien)
 
     def saveToFile(self,path):
         with path.with_suffix('.tpf').open('wb') as f:
@@ -118,6 +127,9 @@ class SummaryPanel(wx.Panel):
 
         txt = wx.StaticText(self, label="infos", style=wx.ALIGN_CENTRE_HORIZONTAL)
         sizer.Add(txt, pos=(0,0), flag=wx.EXPAND)
+
+        self.button = wx.Button(self, label='test',)
+        sizer.Add(self.button, pos=(1,0), flag=wx.EXPAND)
 
         sizer.AddGrowableRow(0)
         sizer.AddGrowableCol(0)
@@ -345,6 +357,12 @@ class TarmedpaketGUI(wx.Frame):
         self.Bind(wx.EVT_MENU, self.OnCloseFrame, self.fileMenuExitItem)
         self.Bind(wx.EVT_MENU, self.OnSaveRule, self.fileMenuSaveRule)
         self.Bind(wx.EVT_MENU, self.OnLoadRule, self.fileMenuLoadRule)
+        self.Bind(wx.EVT_BUTTON, self.OpenExcel, self.excelOpenButton)
+        self.Bind(wx.EVT_BUTTON, self.changeCursor, self.summaryPanel.button)
+
+    def changeCursor(self,event):
+        cursor = wx.Cursor(wx.CURSOR_WAIT)
+        self.SetCursor(cursor)
 
     def OnExitApp(self, event):
         self.Destroy()
@@ -422,11 +440,11 @@ class TarmedpaketGUI(wx.Frame):
         text = wx.StaticText(panel, label='Aktuelles Excel')
         hBox1.Add(text, flag=wx.RIGHT|wx.TOP,border=5)
 
-        path = wx.TextCtrl(panel)
-        hBox1.Add(path, proportion=1, flag=wx.LEFT, border=10)
+        self.excelPath = wx.TextCtrl(panel)
+        hBox1.Add(self.excelPath, proportion=1, flag=wx.LEFT, border=10)
 
-        excelOpenButton = wx.Button(panel, label='Öffnen')
-        hBox1.Add(excelOpenButton, flag=wx.LEFT|wx.RIGHT, border=15)
+        self.excelOpenButton = wx.Button(panel, label='Öffnen')
+        hBox1.Add(self.excelOpenButton, flag=wx.LEFT|wx.RIGHT, border=15)
 
         mainBox.Add(hBox1,flag=wx.TOP|wx.LEFT|wx.RIGHT|wx.EXPAND, border=15)
 
@@ -451,13 +469,14 @@ class TarmedpaketGUI(wx.Frame):
 
         hBox2.Add(ruleBoxSizer, proportion = 4, flag=wx.EXPAND|wx.ALL, border=15)
 
-        hBox2.Add(SummaryPanel(panel), proportion = 1, flag=wx.EXPAND|wx.ALL, border=15)
+        self.summaryPanel = SummaryPanel(panel)
+        hBox2.Add(self.summaryPanel, proportion = 1, flag=wx.EXPAND|wx.ALL, border=15)
 
         mainBox.Add(hBox2, proportion=1,flag=wx.LEFT|wx.RIGHT|wx.EXPAND, border=15)
 
         panel.SetSizer(mainBox)
         
-    def openExcel(self,e):
+    def OpenExcel(self,e):
         openFileDialog = wx.FileDialog(self, "Wählen", "", "", 
                                       "Excel files (*.xlsx)|*.xlsx", 
                                        wx.FD_OPEN | wx.FD_FILE_MUST_EXIST)
@@ -466,14 +485,17 @@ class TarmedpaketGUI(wx.Frame):
         openFileDialog.Destroy()
 
         wait = wx.BusyCursor()
-        # daten,kategorie = datenEinlesen(filePath)
-        excelPanel = self.panels['excelPath']
-        excelPanel.SetValue(filePath)
+        self.excelPath.SetValue(filePath)
+        self.daten.readExcel(filePath)
+
+        cursor = wx.Cursor(wx.CURSOR_ARROW)
+        self.SetCursor(cursor)
 
     def menuhandler(self, event): 
           id_ = event.GetId() 
           if id_ == wx.ID_EXIT: 
              self.Close()
+
 def main():
 
     app = wx.App()
