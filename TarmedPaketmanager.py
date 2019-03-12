@@ -1,20 +1,36 @@
-"""
-ZetCode wxPython tutorial
-
-In this example we create a new class layout
-with wx.GridBagSizer.
-
-author: Jan Bodnar
-website: www.zetcode.com
-last modified: April 2018
-"""
-
 import wx
 import wx.lib.mixins.listctrl
 from collections import OrderedDict
-from ExcelCalc import datenEinlesen, createPakete
+from ExcelCalc import datenEinlesen, createPakete, writePaketeToExcel
 import pickle
 import pathlib
+import threading
+
+class ExcelReader(threading.Thread):
+    def __init__(self, parent, fname):
+        threading.Thread.__init__(self)
+        self._parent = parent
+        self._fname = fname
+        self.start()
+
+    def run(self):
+        result = datenEinlesen(self._fname)
+        if not result is None:
+            daten,kategorien = result
+            daten = createPakete(daten, kategorien)
+        wx.PostEvent(self._parent, ResultEvent( (daten, kategorien) ))
+
+EVT_RESULT_ID = 1001
+
+def EVT_RESULT(win, func):
+    win.Connect(-1,-1, EVT_RESULT_ID, func)
+
+class ResultEvent(wx.PyEvent):
+    def __init__(self,data):
+        wx.PyEvent.__init__(self)
+        self.SetEventType(EVT_RESULT_ID)
+        self.data=data
+
 
 class Log:
     r"""\brief Needed by the wxdemos.
@@ -34,29 +50,46 @@ class DatenStruktur:
 
     def __init__(self):
         self.regeln = OrderedDict()
-        self.regeln['abc'] = { 
-                'and' : ['1','2','3'],
-                'or' : ['4','5'],
-                'not' : ['6'],
-                }
-        self.regeln['neueRegel'] = { 
-                'and' : ['1','2','3'],
-                'or' : ['1','2','3'],
+        self.regeln['008'] = { 
+                'and' : ['15.0710',],
+                'or' : ['00.0010','00.0050','00.0055',],
                 'not' : [],
                 }
-        self.regeln['neueRegel2'] = { 
-                'and' : ['1','2','3'],
-                'or' : ['1','2','3'],
-                'not' : ['5'],
+        self.regeln['011'] = { 
+                'and' : ['15.0740'],
+                'or' : ['00.0010','00.0050','00.0055',],
+                'not' : [],
                 }
-        self.aktiv = 'abc'
+        self.aktiv = ''
+
+    def applyRegelToData(self, regel=None):
+        if not self.daten:
+            return
+        if regel is None:
+            regel = self.aktiv
+        aktiveRegel = self.regeln[regel or self.aktiv]
+        def erfuellt(key):
+            return ( 
+                    all([ (    k in key) for k in aktiveRegel['and']])
+                and any([ (    k in key) for k in aktiveRegel['or']])
+                and all([ (not k in key) for k in aktiveRegel['not']])
+                )
+        ind = self.daten.key.apply(erfuellt)
+        return self.daten[ind]
 
     def readExcel(self, filePath):
         result = datenEinlesen(filePath)
         if result is None:
             return
         daten,kategorien = result
-        self.pakete,self.daten = createPakete(daten, kategorien)
+        self.daten = createPakete(daten, kategorien)
+
+    def writeDatenToExcel(self,filePath):
+        if self.daten:
+            writePaketeToExcel(self.daten, filePath)
+            return True
+        else:
+            return False
 
     def saveToFile(self,path):
         with path.with_suffix('.tpf').open('wb') as f:
@@ -127,9 +160,6 @@ class SummaryPanel(wx.Panel):
 
         txt = wx.StaticText(self, label="infos", style=wx.ALIGN_CENTRE_HORIZONTAL)
         sizer.Add(txt, pos=(0,0), flag=wx.EXPAND)
-
-        self.button = wx.Button(self, label='test',)
-        sizer.Add(self.button, pos=(1,0), flag=wx.EXPAND)
 
         sizer.AddGrowableRow(0)
         sizer.AddGrowableCol(0)
@@ -221,7 +251,7 @@ class ListePanel(wx.Panel):
         sizer.Add( self.listbox, pos=(1,0), span=(1,4), flag=wx.EXPAND|wx.BOTTOM,border=15)
 
         def createBitmapButton(pfad, symbol):
-            bmp = wx.Bitmap(pfad, wx.BITMAP_TYPE_ICO) 
+            # bmp = wx.Bitmap(pfad, wx.BITMAP_TYPE_ICO) 
             # btn = wx.BitmapButton(self, bitmap = bmp, size=(30,30))
             btn = wx.Button(self, label=symbol, size=(30,30))
             return btn
@@ -358,11 +388,17 @@ class TarmedpaketGUI(wx.Frame):
         self.Bind(wx.EVT_MENU, self.OnSaveRule, self.fileMenuSaveRule)
         self.Bind(wx.EVT_MENU, self.OnLoadRule, self.fileMenuLoadRule)
         self.Bind(wx.EVT_BUTTON, self.OpenExcel, self.excelOpenButton)
-        self.Bind(wx.EVT_BUTTON, self.changeCursor, self.summaryPanel.button)
 
-    def changeCursor(self,event):
-        cursor = wx.Cursor(wx.CURSOR_WAIT)
-        self.SetCursor(cursor)
+        EVT_RESULT(self, self.FinishExcelCalc)
+
+    def FinishExcelCalc(self, event):
+        if not event.data is None:
+            self.daten.daten, self.daten.kategorien = event.data
+        else:
+            self.daten.daten, self.daten.kategorien = None,None
+        self.excelWorker = None
+        self.Enable()
+        wx.SetCursor(wx.Cursor(wx.CURSOR_ARROW))
 
     def OnExitApp(self, event):
         self.Destroy()
@@ -433,6 +469,7 @@ class TarmedpaketGUI(wx.Frame):
         self.InitMenuBar()
 
         panel = wx.Panel(self)
+        self.panel = panel
 
         mainBox = wx.BoxSizer(wx.VERTICAL)
 
@@ -484,12 +521,11 @@ class TarmedpaketGUI(wx.Frame):
         filePath = openFileDialog.GetPath()
         openFileDialog.Destroy()
 
-        wait = wx.BusyCursor()
+        wx.SetCursor(wx.Cursor(wx.CURSOR_WAIT))
         self.excelPath.SetValue(filePath)
-        self.daten.readExcel(filePath)
+        self.Disable()
+        self.excelWorker = ExcelReader(self, filePath)
 
-        cursor = wx.Cursor(wx.CURSOR_ARROW)
-        self.SetCursor(cursor)
 
     def menuhandler(self, event): 
           id_ = event.GetId() 

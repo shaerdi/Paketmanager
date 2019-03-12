@@ -7,21 +7,6 @@ import pathlib
 import xlsxwriter
 from collections import defaultdict
 
-
-###############################################################################
-# Hilfsfunktionen
-###############################################################################
-class idCounter:
-    """Zaehler fuer die Paketnummern
-    """
-    counter = 0
-    def __init__(self):
-        self.id = idCounter.counter
-        idCounter.counter += 1
-        self.count = 0
-    def increase(self):
-        self.count += 1
-
 def convertLeistung(l):
     """Macht aus einer Zahl eine Buchstabenfolge (String)
 
@@ -31,6 +16,20 @@ def convertLeistung(l):
         return '{:07.4f}'.format(float(l))
     except:
         return str(l)
+
+def getKategorie(group, kategorien):
+    """Sucht die Kategorie einer Gruppe
+    """
+    tarmedgroup = group[group.Leistungskategorie=='Tarmed']
+    leistungen = tarmedgroup.Leistung.values
+    if len(leistungen) == 0:
+        return 'OhneTarmed'
+
+    for k in kategorien:
+        if k in leistungen:
+            return k
+    return 'Restgruppe'
+
 
 def datenEinlesen(dateiname):
     """Liest ein Excel ein
@@ -62,47 +61,6 @@ def datenEinlesen(dateiname):
     else:
         print("Die Datei hat nicht die Endung .xls(x)")
 
-
-def leistungenFiltern(daten):
-    """Filtert die Daten, so dass nur noch Zeilen mit der Kategorie Tarmed
-    vorhanden sind
-
-    :daten: Pandas Objekt mit Daten
-    :returns: Gefilterte Daten
-
-    """
-    datenNurTarmed = daten[daten.Leistungskategorie == 'Tarmed']
-    leistungen = np.unique(datenNurTarmed.Leistung)
-    return leistungen
-
-def getKategorie(group, kategorien):
-    """Sucht die Kategorie einer Gruppe
-    """
-    tarmedgroup = group[group.Leistungskategorie=='Tarmed']
-    leistungen = tarmedgroup.Leistung.values
-    if len(leistungen) == 0:
-        return 'OhneTarmed'
-
-    for k in kategorien:
-        if k in leistungen:
-            return k
-    return 'Restgruppe'
-
-
-def createKey(group):
-    """Baut eine Gruppen ID
-
-    Die ID ist ein langer String mit allen Leistungsnummer sortiert
-    aneinandergehaengt.
-    """
-    tarmedgroup = group[group.Leistungskategorie=='Tarmed']
-    key = ''.join([
-            str(l) for l in
-            sorted(np.unique((tarmedgroup.Leistung.values)))
-            #sorted((tarmedgroup.Leistung.values))
-            ])
-    return key
-
 def sheetSchreiben(sheetname, daten, writer):
     """Schreibt Daten in ein neues sheet in einem Excel
     """
@@ -121,52 +79,46 @@ def sheetSchreiben(sheetname, daten, writer):
     for zeile in graueZeilen:
         sheet.set_row(zeile,None,cell_format_grey)
 
-def getFirstGroup(groups):
-    for i,g in groups:
-        return g
 ###############################################################################
 # Hauptfunktion, geht alle Leistungen durch und schreibt sie in ein Excel
 ###############################################################################
 def createPakete(daten, kategorien):
-    """Schreibt die Pakete in ein neues Excel
-
+    """
     :daten: Pandas objekt mit allen Daten
     :kategorien: Liste mit den Kategorien
-    :filename: Filename der neuen Resultatdatei
-    :ordner: Ordner, in dem das Resultat gespeichert wird
     """
-
-    idCounter.counter=0
-    pakete = defaultdict(lambda : idCounter())
 
     # Erster Durchgang:
     # Die Daten werden nach FallDatum gruppiert, und jede Gruppe wird in die
     # Pakete einsortiert.
-    for falldatum, group in daten.groupby('FallDatum'):
-        key = createKey(group)
-        pakete[key].increase()
-        daten.loc[group.index,'paketID'] = pakete[key].id
-        daten.loc[group.index,'kategorie'] = getKategorie(group,kategorien)
+    for fd,g in daten.groupby('FallDatum'): 
+        key = set(g[g.Leistungskategorie=='Tarmed'].Leistung)  
+        daten.loc[g.index,'key'] = ",".join(key)
 
-    # Zweiter Durchgang:
-    # Die Anzahl jedes Pakets wird in die entsprechende Zeile geschrieben
-    for falldatum, group in daten.groupby('FallDatum'):
-        key = createKey(group)
-        daten.loc[group.index,'Anzahl'] = pakete[key].count
+    for i,(fd,g) in enumerate(daten.groupby('key')):
+        daten.loc[g.index, 'paketID'] = int(i)
+        daten.loc[g.index,'Anzahl'] = g.shape[0]
 
 
-    # Daten absteigend nach Anzahl sortieren
-    daten=daten.sort_values(['Anzahl','Leistungskategorie'], ascending=False)
-    return daten, pakete
+    def getKat(key):
+        if len(key) == 0:
+            return 'OhneTarmed'
+        for k in kategorien:
+            if k in key:
+                return k
+        return 'Restgruppe'
 
-def writePaketeToExcel(daten, pakete, filename, ordner = 'Resultate'):
+    daten['Kategorie'] = daten['key'].apply(getKat)
+
+    return daten
+
+def writePaketeToExcel(daten, filename, ordner = 'Resultate'):
     #############################################
     # Ab jetzt der Code um das Excel zu schreiben
     #############################################
 
     # Pfad zur Resultatdatei
-    fname = pathlib.Path('.') / ordner / filename
-    fname = fname.with_suffix('.xlsx')
+    fname = pathlib.Path(filename).with_suffix('.xlsx')
 
     # Ordner erstellen, wenn es ihn noch nicht gibt
     if not fname.parent.exists():
@@ -178,7 +130,7 @@ def writePaketeToExcel(daten, pakete, filename, ordner = 'Resultate'):
 
     ## Daten Schreiben
     # Rohdaten
-    daten.drop(['kategorie'],axis=1).to_excel(
+    daten.drop(['Kategorie'],axis=1).to_excel(
             writer, sheet_name='Rohdaten', index=False
             )
 
