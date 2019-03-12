@@ -5,6 +5,7 @@ from ExcelCalc import datenEinlesen, createPakete, writePaketeToExcel
 import pickle
 import pathlib
 import threading
+import pandas as pd
 
 class ExcelReader(threading.Thread):
     def __init__(self, parent, fname):
@@ -45,8 +46,8 @@ class Log:
 
 class DatenStruktur:
     Listen = []
-    pakete = []
-    kategorie = []
+    kategorien = None
+    daten = None
 
     def __init__(self):
         self.regeln = OrderedDict()
@@ -62,8 +63,17 @@ class DatenStruktur:
                 }
         self.aktiv = ''
 
+    def saveRegelnToExcel(self, filePath):
+        if self.daten is None:
+            return
+        datenListe = [self.applyRegelToData(regel) for regel in self.regeln]
+        datenListe = [l.drop_duplicates(subset='FallDatum') for l in datenListe]
+
+        daten = pd.concat(datenListe)
+        daten.to_excel(filePath, index=False)
+
     def applyRegelToData(self, regel=None):
-        if not self.daten:
+        if self.daten is None:
             return
         if regel is None:
             regel = self.aktiv
@@ -77,16 +87,9 @@ class DatenStruktur:
         ind = self.daten.key.apply(erfuellt)
         return self.daten[ind]
 
-    def readExcel(self, filePath):
-        result = datenEinlesen(filePath)
-        if result is None:
-            return
-        daten,kategorien = result
-        self.daten = createPakete(daten, kategorien)
-
     def writeDatenToExcel(self,filePath):
-        if self.daten:
-            writePaketeToExcel(self.daten, filePath)
+        if not self.daten is None:
+            writePaketeToExcel(self.daten, self.kategorien, filePath)
             return True
         else:
             return False
@@ -387,9 +390,22 @@ class TarmedpaketGUI(wx.Frame):
         self.Bind(wx.EVT_MENU, self.OnCloseFrame, self.fileMenuExitItem)
         self.Bind(wx.EVT_MENU, self.OnSaveRule, self.fileMenuSaveRule)
         self.Bind(wx.EVT_MENU, self.OnLoadRule, self.fileMenuLoadRule)
+        self.Bind(wx.EVT_MENU, self.OnSaveExcel, self.fileMenuExportExcel)
+        self.Bind(wx.EVT_MENU, self.OnSaveRegelExcel, self.fileMenuExportRegelExcel)
         self.Bind(wx.EVT_BUTTON, self.OpenExcel, self.excelOpenButton)
 
         EVT_RESULT(self, self.FinishExcelCalc)
+
+    def OnSaveRegelExcel(self,event):
+        saveFileDialog = wx.FileDialog(self, "Speichern unter", "", "", 
+                                      "Excel files (*.xlsx)|*.xlsx", 
+                                       wx.FD_SAVE,
+                                       )
+        saveFileDialog.ShowModal()
+        filePath = pathlib.Path(saveFileDialog.GetPath())
+        saveFileDialog.Destroy()
+        self.daten.saveRegelnToExcel(filePath)
+
 
     def FinishExcelCalc(self, event):
         if not event.data is None:
@@ -398,7 +414,7 @@ class TarmedpaketGUI(wx.Frame):
             self.daten.daten, self.daten.kategorien = None,None
         self.excelWorker = None
         self.Enable()
-        wx.SetCursor(wx.Cursor(wx.CURSOR_ARROW))
+        self.SetCursor(wx.Cursor(wx.CURSOR_ARROW))
 
     def OnExitApp(self, event):
         self.Destroy()
@@ -412,6 +428,20 @@ class TarmedpaketGUI(wx.Frame):
         filePath = pathlib.Path(saveFileDialog.GetPath())
         saveFileDialog.Destroy()
         self.daten.saveToFile(filePath)
+
+    def OnSaveExcel(self, event):
+        saveFileDialog = wx.FileDialog(self, "Speichern unter", "", "", 
+                                      "Excel files (*.xlsx)|*.xlsx", 
+                                       wx.FD_SAVE,
+                                       )
+        saveFileDialog.ShowModal()
+        filePath = pathlib.Path(saveFileDialog.GetPath())
+        saveFileDialog.Destroy()
+        if not self.daten.writeDatenToExcel(filePath):
+            wx.MessageBox('Noch keine Daten vorhanden', 'Info',
+                    wx.OK | wx.ICON_INFORMATION,
+                    )
+
 
     def OnLoadRule(self, event):
         openFileDialog = wx.FileDialog(self, "Öffnen", "", "", 
@@ -438,10 +468,15 @@ class TarmedpaketGUI(wx.Frame):
         menubar = wx.MenuBar()
 
         fileMenu = wx.Menu()
-        self.fileMenuExportItem = wx.MenuItem(fileMenu, wx.ID_ANY,
+        self.fileMenuExportExcel = wx.MenuItem(fileMenu, wx.ID_ANY,
                 text = "Export Excel",
                 )
-        fileMenu.Append(self.fileMenuExportItem)
+        fileMenu.Append(self.fileMenuExportExcel)
+
+        self.fileMenuExportRegelExcel = wx.MenuItem(fileMenu, wx.ID_ANY,
+                text = "Export Bedingungen in Excel",
+                )
+        fileMenu.Append(self.fileMenuExportRegelExcel)
 
         fileMenu.AppendSeparator()
 
@@ -521,7 +556,7 @@ class TarmedpaketGUI(wx.Frame):
         filePath = openFileDialog.GetPath()
         openFileDialog.Destroy()
 
-        wx.SetCursor(wx.Cursor(wx.CURSOR_WAIT))
+        self.SetCursor(wx.Cursor(wx.CURSOR_WAIT))
         self.excelPath.SetValue(filePath)
         self.Disable()
         self.excelWorker = ExcelReader(self, filePath)

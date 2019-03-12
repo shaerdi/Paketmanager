@@ -112,7 +112,11 @@ def createPakete(daten, kategorien):
 
     return daten
 
-def writePaketeToExcel(daten, filename, ordner = 'Resultate'):
+def getFirstGroup(groups):
+    for i,g in groups:
+        return g
+
+def writePaketeToExcel(daten, kategorien, filename, ordner = 'Resultate'):
     #############################################
     # Ab jetzt der Code um das Excel zu schreiben
     #############################################
@@ -137,7 +141,7 @@ def writePaketeToExcel(daten, filename, ordner = 'Resultate'):
     # Alle Pakete, jeweils die erste Fallnummer im entsprechenden Paket
     allePakete = pd.concat(sorted([
             getFirstGroup(g[1].groupby('FallDatum',sort=False))
-            for g in daten.drop('kategorie',axis=1).groupby('paketID',sort=False)
+            for g in daten.drop('Kategorie',axis=1).groupby('paketID',sort=False)
             ],
             key = lambda x : x.Anzahl.max(), reverse = True
             ))
@@ -145,7 +149,7 @@ def writePaketeToExcel(daten, filename, ordner = 'Resultate'):
 
     # Pro Kategorie
     for kategorie in kategorien.tolist() + ['Restgruppe','OhneTarmed']:
-        katData = daten[daten['kategorie']==kategorie].drop('kategorie',axis=1)
+        katData = daten[daten['Kategorie']==kategorie].drop('Kategorie',axis=1)
         try:
             katData = pd.concat(sorted([
                 getFirstGroup(g[1].groupby('FallDatum',sort=False))
@@ -158,7 +162,6 @@ def writePaketeToExcel(daten, filename, ordner = 'Resultate'):
             pass
 
     workbook.close()
-    return pakete,daten
 
 
 def excelBearbeiten(
@@ -177,8 +180,6 @@ def excelBearbeiten(
         p.key = pid
         pkts.append(p)
     return pkts,daten
-
-
 
 # Beispiel fuer das Filtern von Paketen
 """    
