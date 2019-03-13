@@ -19,7 +19,9 @@ class ExcelReader(threading.Thread):
         if not result is None:
             daten,kategorien = result
             daten = createPakete(daten, kategorien)
-        wx.PostEvent(self._parent, ResultEvent( (daten, kategorien) ))
+            wx.PostEvent(self._parent, ResultEvent( (daten, kategorien) ))
+        else:
+            wx.PostEvent(self._parent, ResultEvent( None ))
 
 EVT_RESULT_ID = 1001
 
@@ -79,13 +81,23 @@ class DatenStruktur:
             regel = self.aktiv
         aktiveRegel = self.regeln[regel or self.aktiv]
         def erfuellt(key):
-            return ( 
-                    all([ (    k in key) for k in aktiveRegel['and']])
-                and any([ (    k in key) for k in aktiveRegel['or']])
-                and all([ (not k in key) for k in aktiveRegel['not']])
-                )
+            erfuelltAlle = all([ (    k in key) for k in aktiveRegel['and']])
+            erfuelltOder = len(aktiveRegel['or']) == 0 or \
+                           any([ (    k in key) for k in aktiveRegel['or']])
+            erfuelltNot  = all([ (not k in key) for k in aktiveRegel['not']])
+            return  erfuelltAlle and erfuelltOder and erfuelltNot
+
         ind = self.daten.key.apply(erfuellt)
-        return self.daten[ind]
+        kopie = self.daten[ind].copy()
+        kopie.drop_duplicates(subset='FallDatum',inplace=True)
+        kopie['Regel'] = regel
+        return kopie
+
+    def getAnzahlFalldaten(self):
+        if not self.daten is None:
+            return self.daten.FallDatum.drop_duplicates().shape[0]
+        else:
+            return 0
 
     def writeDatenToExcel(self,filePath):
         if not self.daten is None:
@@ -105,6 +117,14 @@ class DatenStruktur:
 
     def setAktiv(self,name):
         self.aktiv=name
+
+    def getLeistungen(self, filter_ = ''):
+        if self.daten is None:
+            return
+        leistungen = self.daten[self.daten['Leistungskategorie'] == 'Tarmed']['Leistung']
+        leistungen = leistungen.drop_duplicates()
+        ind = leistungen.str.contains(filter_)
+        return leistungen[ind].values
 
     def getRegeln(self):
         return list(self.regeln.keys())
@@ -147,10 +167,47 @@ class DatenStruktur:
     def updateListen(self):
         for l in self.Listen:
             l.update()
+        self.updateSummaryPanel()
 
+    def updateSummaryPanel(self):
+        try:
+            self.summaryPanel.updateBedingung( self.applyRegelToData().shape[0] )
+        except:
+            pass
 
+class BedingungswahlDialog(wx.Dialog):
+    def __init__(self, parent, id, title, daten):
+        wx.Dialog.__init__(self, parent, id, title)
+        self.daten = daten
+        self.InitUI()
+        self.SetList()
 
+    def InitUI(self):
+        vbox = wx.BoxSizer(wx.VERTICAL) 
+        hbox1 = wx.BoxSizer(wx.HORIZONTAL)
+        txt = wx.StaticText(self, label = "Neue Bedingung")
+        hbox1.Add(txt,proportion=0,flag=wx.ALL,border=5)
+        self.insertTxt = wx.TextCtrl(self)
+        hbox1.Add(self.insertTxt,proportion=1,flag=wx.EXPAND)
+        vbox.Add(hbox1, proportion=0, flag = wx.EXPAND|wx.TOP, border = 4) 
 
+        self.helpList = wx.ListBox(self,
+                style= wx.LB_SINGLE|wx.LB_NEEDED_SB,
+                )
+        vbox.Add(self.helpList, proportion=1, flag = wx.EXPAND|wx.ALL,border=5)
+
+        sizer =  self.CreateButtonSizer(wx.OK|wx.CANCEL)
+        vbox.Add(sizer, proportion=0, flag=wx.EXPAND|wx.ALL, border=5)
+        self.SetSizer(vbox)
+
+    def SetList(self):
+        self.helpList.Clear()
+        leistungen = self.daten.getLeistungen(self.insertTxt.GetValue())
+        if not leistungen is None:
+            self.helpList.InsertItems(leistungen,0)
+
+    def GetValue(self):
+        return self.insertTxt.GetValue()
 
 
 class SummaryPanel(wx.Panel):
@@ -159,15 +216,31 @@ class SummaryPanel(wx.Panel):
         self.InitUI()
 
     def InitUI(self):
-        sizer = wx.GridBagSizer(5,5)
+        sizer = wx.FlexGridSizer(3, 2, 10,50)
 
-        txt = wx.StaticText(self, label="infos", style=wx.ALIGN_CENTRE_HORIZONTAL)
-        sizer.Add(txt, pos=(0,0), flag=wx.EXPAND)
+        txt = wx.StaticText(self, label="Infos", style=wx.ALIGN_CENTRE_HORIZONTAL)
+        sizer.Add(txt)
+        sizer.Add(wx.StaticText(self))
 
-        sizer.AddGrowableRow(0)
-        sizer.AddGrowableCol(0)
+        txt = wx.StaticText(self, label="Anzahl Falldaten:", style=wx.ALIGN_LEFT)
+        sizer.Add(txt)
+
+        self.anzahlPaketeTotal = wx.StaticText(self, label="0", style=wx.ALIGN_LEFT)
+        sizer.Add(self.anzahlPaketeTotal)
+
+        txt = wx.StaticText(self, label="Falldaten mit Bedingung:", style=wx.ALIGN_LEFT)
+        sizer.Add(txt)
+
+        self.anzahlPaketeBedingung = wx.StaticText(self, label="0", style=wx.ALIGN_LEFT)
+        sizer.Add(self.anzahlPaketeBedingung)
 
         self.SetSizer(sizer)
+
+    def updateTotal(self, num):
+        self.anzahlPaketeTotal.SetLabel( str(num) )
+
+    def updateBedingung(self, num):
+        self.anzahlPaketeBedingung.SetLabel( str(num) )
 
 class AnzeigeListe(wx.ListCtrl, wx.lib.mixins.listctrl.ListCtrlAutoWidthMixin):
     def __init__(self, parent,daten, *args, **kw):
@@ -287,7 +360,7 @@ class RegelPanel(ListePanel):
         self.updateAktiv(index)
 
     def getCtrlList(self):
-        return RegelListe(self, self.daten, size=(100,-1))
+        return RegelListe(self, self.daten, size=(70,-1))
 
     def SetupEvents(self):
         self.Bind(wx.EVT_BUTTON, self.NewItem, id=self.newBtn.GetId())
@@ -306,6 +379,7 @@ class RegelPanel(ListePanel):
         else:
             self.daten.setAktiv('')
 
+        self.daten.updateSummaryPanel()
         self.daten.updateListen()
         
     def NewItem(self, event):
@@ -342,7 +416,13 @@ class BedingungsPanel(ListePanel):
         self.Bind(wx.EVT_BUTTON, self.ClrItem, id=self.clrBtn.GetId())
 
     def NewItem(self, event):
-        text = wx.GetTextFromUser('Enter a new item', 'Insert dialog')
+        with BedingungswahlDialog(self,wx.ID_ANY, "Neue Bedingung", self.daten) as dlg:
+            if dlg.ShowModal() == wx.ID_YES:
+                print("hello")
+            else:
+                print('no')
+            text = dlg.GetValue()
+            # text = wx.GetTextFromUser('Enter a new item', 'Insert dialog')
         if text != '' and self.daten.aktiv in self.daten.regeln:
             aktiveRegel = self.daten.regeln[self.daten.aktiv]
             self.daten.regeln[self.daten.aktiv][self.titel].append(
@@ -368,7 +448,7 @@ class BedingungsPanel(ListePanel):
 
 class TarmedpaketGUI(wx.Frame):
     name = "Tarmed Pakete"
-    windowSize = (800,600)
+    windowSize = (1000,600)
 
     panels = {}
 
@@ -398,7 +478,7 @@ class TarmedpaketGUI(wx.Frame):
 
     def OnSaveRegelExcel(self,event):
         saveFileDialog = wx.FileDialog(self, "Speichern unter", "", "", 
-                                      "Excel files (*.xlsx)|*.xlsx", 
+                                      "Excel files (*.xlsx; *.xls)|*.xlsx;*.xls", 
                                        wx.FD_SAVE,
                                        )
         saveFileDialog.ShowModal()
@@ -412,7 +492,11 @@ class TarmedpaketGUI(wx.Frame):
             self.daten.daten, self.daten.kategorien = event.data
         else:
             self.daten.daten, self.daten.kategorien = None,None
+
         self.excelWorker = None
+
+        self.summaryPanel.updateTotal( self.daten.getAnzahlFalldaten() )
+        self.daten.updateSummaryPanel()
         self.Enable()
         self.SetCursor(wx.Cursor(wx.CURSOR_ARROW))
 
@@ -431,7 +515,7 @@ class TarmedpaketGUI(wx.Frame):
 
     def OnSaveExcel(self, event):
         saveFileDialog = wx.FileDialog(self, "Speichern unter", "", "", 
-                                      "Excel files (*.xlsx)|*.xlsx", 
+                                      "Excel files (*.xlsx; *.xls)|*.xlsx;*.xls", 
                                        wx.FD_SAVE,
                                        )
         saveFileDialog.ShowModal()
@@ -539,9 +623,10 @@ class TarmedpaketGUI(wx.Frame):
         ruleBoxSizer.Add(pl2, proportion=1,flag=wx.EXPAND|wx.ALL, border=15)
         ruleBoxSizer.Add(pl3, proportion=1,flag=wx.EXPAND|wx.ALL, border=15)
 
-        hBox2.Add(ruleBoxSizer, proportion = 4, flag=wx.EXPAND|wx.ALL, border=15)
+        hBox2.Add(ruleBoxSizer, proportion = 2, flag=wx.EXPAND|wx.ALL, border=15)
 
         self.summaryPanel = SummaryPanel(panel)
+        self.daten.summaryPanel = self.summaryPanel
         hBox2.Add(self.summaryPanel, proportion = 1, flag=wx.EXPAND|wx.ALL, border=15)
 
         mainBox.Add(hBox2, proportion=1,flag=wx.LEFT|wx.RIGHT|wx.EXPAND, border=15)
@@ -550,7 +635,7 @@ class TarmedpaketGUI(wx.Frame):
         
     def OpenExcel(self,e):
         openFileDialog = wx.FileDialog(self, "Wählen", "", "", 
-                                      "Excel files (*.xlsx)|*.xlsx", 
+                                      "Excel files (*.xlsx;*.xls)|*.xlsx;*.xls", 
                                        wx.FD_OPEN | wx.FD_FILE_MUST_EXIST)
         openFileDialog.ShowModal()
         filePath = openFileDialog.GetPath()
