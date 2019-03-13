@@ -15,13 +15,19 @@ class ExcelReader(threading.Thread):
         self.start()
 
     def run(self):
-        result = datenEinlesen(self._fname)
-        if not result is None:
-            daten,kategorien = result
-            daten = createPakete(daten, kategorien)
-            wx.PostEvent(self._parent, ResultEvent( (daten, kategorien) ))
-        else:
-            wx.PostEvent(self._parent, ResultEvent( None ))
+        evt = ResultEvent(success=False)
+        if not self._fname is None:
+            try:
+                result = datenEinlesen(self._fname)
+                if not result is None:
+                    daten,kategorien = result
+                    daten = createPakete(daten, kategorien)
+                    evt.success = True
+                    evt.data = (daten,kategorien)
+            except IOError as e:
+                evt.errMsg = '{}'.format(e)
+
+        wx.PostEvent(self._parent, evt)
 
 EVT_RESULT_ID = 1001
 
@@ -29,10 +35,16 @@ def EVT_RESULT(win, func):
     win.Connect(-1,-1, EVT_RESULT_ID, func)
 
 class ResultEvent(wx.PyEvent):
-    def __init__(self,data):
+    def __init__(self,
+            data = None,
+            success = True,
+            errMsg = '',
+            ):
         wx.PyEvent.__init__(self)
         self.SetEventType(EVT_RESULT_ID)
         self.data=data
+        self.success = success
+        self.errMsg = ''
 
 
 class Log:
@@ -118,6 +130,12 @@ class DatenStruktur:
     def setAktiv(self,name):
         self.aktiv=name
 
+    def CheckItem(self, item):
+        if self.daten is None:
+            return False
+        else:
+            return item in self.daten.Leistung.values
+
     def getLeistungen(self, filter_ = ''):
         if self.daten is None:
             return
@@ -199,11 +217,26 @@ class BedingungswahlDialog(wx.Dialog):
         sizer =  self.CreateButtonSizer(wx.OK|wx.CANCEL)
         vbox.Add(sizer, proportion=0, flag=wx.EXPAND|wx.ALL, border=5)
         self.SetSizer(vbox)
+        
+        self.Bind(wx.EVT_LISTBOX, self.OnListboxClicked, self.helpList)
+        self.Bind(wx.EVT_LISTBOX_DCLICK, self.OnListboxDoubleClicked, self.helpList)
+        self.Bind(wx.EVT_TEXT, self.OnTextChanged, self.insertTxt)
 
+    def OnTextChanged(self,event):
+        self.SetList()
+
+    def OnListboxDoubleClicked(self,event):
+        self.OnListboxClicked(event)
+        self.EndModal(wx.ID_OK)
+
+    def OnListboxClicked(self,event):
+        string = event.GetEventObject().GetStringSelection()
+        self.insertTxt.ChangeValue(string)
+        
     def SetList(self):
         self.helpList.Clear()
         leistungen = self.daten.getLeistungen(self.insertTxt.GetValue())
-        if not leistungen is None:
+        if not leistungen is None and not len(leistungen)==0:
             self.helpList.InsertItems(leistungen,0)
 
     def GetValue(self):
@@ -244,6 +277,8 @@ class SummaryPanel(wx.Panel):
 
 class AnzeigeListe(wx.ListCtrl, wx.lib.mixins.listctrl.ListCtrlAutoWidthMixin):
     def __init__(self, parent,daten, *args, **kw):
+        self._parent = parent
+
         if not 'style' in kw:
             kw['style'] = wx.LC_REPORT|wx.LC_NO_HEADER|wx.LC_HRULES|wx.LC_VIRTUAL
 
@@ -257,6 +292,8 @@ class AnzeigeListe(wx.ListCtrl, wx.lib.mixins.listctrl.ListCtrlAutoWidthMixin):
         self.daten.Listen.append(self)
         
         self.InsertColumn(0,'')
+
+        self.Bind(wx.EVT_KEY_DOWN, lambda e:wx.PostEvent(self._parent,e) )
 
     def OnItemSelected(self, event):
         self.currentItem = event.m_itemIndex
@@ -294,15 +331,23 @@ class BedingungsListe(AnzeigeListe):
     def __init__(self, parent,daten,titel, *args, **kw):
         AnzeigeListe.__init__(self, parent,daten, *args, **kw)
 
+        self.normalItem = wx.ListItemAttr()
+        self.redItem = wx.ListItemAttr()
+        self.redItem.SetBackgroundColour(wx.Colour(255,204,204))
+
         self.titel = titel.lower()
         self.update()
+        
 
     def update(self):
         self.items = self.daten.getAktiveRegel(self.titel)
         self.SetItemCount(len(self.items))
 
     def OnGetItemAttr(self, item):
-        return None
+        if self.daten.CheckItem(self.items[item]):
+            return self.normalItem
+        else:
+            return self.redItem
 
 
 class ListePanel(wx.Panel):
@@ -367,6 +412,23 @@ class RegelPanel(ListePanel):
         self.Bind(wx.EVT_BUTTON, self.DelItem, id=self.delBtn.GetId())
         self.Bind(wx.EVT_BUTTON, self.ClrItem, id=self.clrBtn.GetId())
         self.Bind(wx.EVT_LIST_ITEM_SELECTED, self.OnClickItem, self.listbox)
+        self.Bind(wx.EVT_KEY_DOWN, self.OnKeyPress)
+
+    def OnKeyPress(self,event):
+        keycode = event.GetKeyCode()
+
+        index = self.listbox.GetFocusedItem()
+        if index < 0:
+            return
+
+        if keycode == wx.WXK_UP and index > 0:
+            self.listbox.Select(index-1)
+            self.listbox.Focus(index-1)
+        elif keycode == wx.WXK_DOWN and index < self.listbox.GetItemCount()-1:
+            self.listbox.Select(index+1)
+            self.listbox.Focus(index+1)
+        elif keycode == wx.WXK_DELETE or keycode == wx.WXK_NUMPAD_DELETE:
+            self.DelItem(event)
 
     def OnClickItem(self, event):
         ind = event.GetIndex()
@@ -394,7 +456,7 @@ class RegelPanel(ListePanel):
         index = self.listbox.GetFirstSelected()
         if index >= 0:
             item = self.listbox.GetItem(index).GetText()
-            self.daten.deleteItem(item)
+            self.daten.deleteRegel(item)
             self.daten.updateListen()
             self.setFocus(index)
 
@@ -414,21 +476,34 @@ class BedingungsPanel(ListePanel):
         self.Bind(wx.EVT_BUTTON, self.NewItem, id=self.newBtn.GetId())
         self.Bind(wx.EVT_BUTTON, self.DelItem, id=self.delBtn.GetId())
         self.Bind(wx.EVT_BUTTON, self.ClrItem, id=self.clrBtn.GetId())
+        self.Bind(wx.EVT_KEY_DOWN, self.OnKeyPress)
+
+    def OnKeyPress(self,event):
+        keycode = event.GetKeyCode()
+
+        index = self.listbox.GetFocusedItem()
+        if index < 0:
+            return
+
+        if keycode == wx.WXK_UP and index > 0:
+            self.listbox.Focus(index-1)
+        elif keycode == wx.WXK_DOWN and index < self.listbox.GetItemCount()-1:
+            self.listbox.Focus(index+1)
+        elif keycode == wx.WXK_DELETE or keycode == wx.WXK_NUMPAD_DELETE:
+            self.DelItem(event)
+
 
     def NewItem(self, event):
         with BedingungswahlDialog(self,wx.ID_ANY, "Neue Bedingung", self.daten) as dlg:
-            if dlg.ShowModal() == wx.ID_YES:
-                print("hello")
-            else:
-                print('no')
-            text = dlg.GetValue()
-            # text = wx.GetTextFromUser('Enter a new item', 'Insert dialog')
-        if text != '' and self.daten.aktiv in self.daten.regeln:
-            aktiveRegel = self.daten.regeln[self.daten.aktiv]
-            self.daten.regeln[self.daten.aktiv][self.titel].append(
-                    text
-                    )
-            self.listbox.update()
+            if dlg.ShowModal() == wx.ID_OK:
+                text = dlg.GetValue()
+                if text != '' and self.daten.aktiv in self.daten.regeln:
+                    aktiveRegel = self.daten.regeln[self.daten.aktiv]
+                    self.daten.regeln[self.daten.aktiv][self.titel].append(
+                            text
+                            )
+                    self.listbox.update()
+                    self.daten.updateSummaryPanel()
 
     def DelItem(self, event):
         index = self.listbox.GetFirstSelected()
@@ -488,15 +563,21 @@ class TarmedpaketGUI(wx.Frame):
 
 
     def FinishExcelCalc(self, event):
-        if not event.data is None:
-            self.daten.daten, self.daten.kategorien = event.data
+        if event.success:
+            self.daten.daten = event.data[0]
+            self.daten.kategorien = event.data[1]
+            self.summaryPanel.updateTotal( self.daten.getAnzahlFalldaten() )
+            self.daten.updateSummaryPanel()
         else:
+            if event.errMsg:
+                wx.MessageBox(
+                        message=event.errMsg,
+                        caption='Fehler',
+                        style=wx.OK | wx.ICON_INFORMATION,
+                        )
             self.daten.daten, self.daten.kategorien = None,None
 
         self.excelWorker = None
-
-        self.summaryPanel.updateTotal( self.daten.getAnzahlFalldaten() )
-        self.daten.updateSummaryPanel()
         self.Enable()
         self.SetCursor(wx.Cursor(wx.CURSOR_ARROW))
 
@@ -520,11 +601,11 @@ class TarmedpaketGUI(wx.Frame):
                                        )
         saveFileDialog.ShowModal()
         filePath = pathlib.Path(saveFileDialog.GetPath())
-        saveFileDialog.Destroy()
         if not self.daten.writeDatenToExcel(filePath):
             wx.MessageBox('Noch keine Daten vorhanden', 'Info',
                     wx.OK | wx.ICON_INFORMATION,
                     )
+        saveFileDialog.Destroy()
 
 
     def OnLoadRule(self, event):
@@ -637,7 +718,8 @@ class TarmedpaketGUI(wx.Frame):
         openFileDialog = wx.FileDialog(self, "Wählen", "", "", 
                                       "Excel files (*.xlsx;*.xls)|*.xlsx;*.xls", 
                                        wx.FD_OPEN | wx.FD_FILE_MUST_EXIST)
-        openFileDialog.ShowModal()
+        if not openFileDialog.ShowModal() == wx.ID_OK:
+            return
         filePath = openFileDialog.GetPath()
         openFileDialog.Destroy()
 

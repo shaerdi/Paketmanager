@@ -38,28 +38,26 @@ def datenEinlesen(dateiname):
     eine Liste mit den Kategorien aus dem zweiten Sheet des Excels
 
     """
-    if '.xls' in dateiname:
-        daten = pd.read_excel(
+    if not '.xls' in dateiname:
+        raise IOError("Datei hat nicht die Endung '.xls' oder '.xlsx'")
+    daten = pd.read_excel(
+            dateiname,
+            converters = {'Leistung':convertLeistung},
+            )
+    try:
+        kategorien = pd.read_excel(
                 dateiname,
-                converters = {'Leistung':convertLeistung},
+                sheet_name=1,
+                converters = {0:convertLeistung},
+                header = None,
                 )
-        try:
-            kategorien = pd.read_excel(
-                    dateiname,
-                    sheet_name=1,
-                    converters = {0:convertLeistung},
-                    header = None,
-                    )
-            kategorien = kategorien.values.flatten()
-            print("Verwende Kategorien:")
-            for k in kategorien:
-                print(k)
-        except IndexError:
-            print("Keine Kategorien gefunden. Gibt es ein zweites Sheet in der Datei {}?".format(dateiname))
-            return
-        return daten,kategorien
-    else:
-        print("Die Datei hat nicht die Endung .xls(x)")
+        kategorien = kategorien.values.flatten()
+    except IndexError:
+        raise IOError(
+                "Keine Kategorien gefunden. Gibt es ein zweites " 
+              + "Sheet in der Datei {}?".format(dateiname)
+              )
+    return daten,kategorien
 
 def sheetSchreiben(sheetname, daten, writer):
     """Schreibt Daten in ein neues sheet in einem Excel
