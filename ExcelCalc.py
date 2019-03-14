@@ -89,9 +89,20 @@ def createPakete(daten, kategorien):
     # Erster Durchgang:
     # Die Daten werden nach FallDatum gruppiert, und jede Gruppe wird in die
     # Pakete einsortiert.
-    for fd,g in daten.groupby('FallDatum'): 
-        key = set(g[g.Leistungskategorie=='Tarmed'].Leistung)  
-        daten.loc[g.index,'key'] = ",".join(key)
+
+    def buildKey(s):
+        return ','.join(set(s))
+
+    Leistungen = daten[daten.Leistungskategorie == 'Tarmed'][['FallDatum','Leistung']]
+    keys = Leistungen.groupby('FallDatum').aggregate(buildKey)
+    keys.rename({'Leistung': 'key'},axis=1,inplace=True)
+
+    daten = daten.join(keys,on='FallDatum')
+    daten.fillna({'key':''},inplace=True)
+
+    # for fd,g in daten.groupby('FallDatum'): 
+        # key = set(g[g.Leistungskategorie=='Tarmed'].Leistung)  
+        # daten.loc[g.index,'key'] = ",".join(key)
 
     for i,(fd,g) in enumerate(daten.groupby('key')):
         daten.loc[g.index, 'paketID'] = int(i)

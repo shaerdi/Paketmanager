@@ -29,7 +29,38 @@ class ExcelReader(threading.Thread):
 
         wx.PostEvent(self._parent, evt)
 
+class ExcelWriter(threading.Thread):
+    def __init__(self, parent, fname, daten):
+        threading.Thread.__init__(self)
+        self._parent = parent
+        self._fname = fname
+        self._daten = daten
+        self.start()
+
+    def run(self):
+        evt = ResultEvent(success=False)
+
+        if not self._fname is None:
+            try:
+                result = datenEinlesen(self._fname)
+                if not result is None:
+                    daten,kategorien = result
+                    daten = createPakete(daten, kategorien)
+                    evt.success = True
+                    evt.data = (daten,kategorien)
+            except IOError as e:
+                evt.errMsg = '{}'.format(e)
+
+        wx.PostEvent(self._parent, evt)
+
 EVT_RESULT_ID = 1001
+
+tooltips = {
+        'regel' : 'Definierte Regeln',
+        'and' : 'Alle Leistungen müssen im Paket vorkommen',
+        'or' : 'Mindestens eine Leistung muss im Paket vorkommen',
+        'not' : 'Keine der Leistungen darf im Paket vorkommen',
+}
 
 def EVT_RESULT(win, func):
     win.Connect(-1,-1, EVT_RESULT_ID, func)
@@ -65,16 +96,6 @@ class DatenStruktur:
 
     def __init__(self):
         self.regeln = OrderedDict()
-        self.regeln['008'] = { 
-                'and' : ['15.0710',],
-                'or' : ['00.0010','00.0050','00.0055',],
-                'not' : [],
-                }
-        self.regeln['011'] = { 
-                'and' : ['15.0740'],
-                'or' : ['00.0010','00.0050','00.0055',],
-                'not' : [],
-                }
         self.aktiv = ''
 
     def saveRegelnToExcel(self, filePath):
@@ -82,9 +103,10 @@ class DatenStruktur:
             return
         datenListe = [self.applyRegelToData(regel) for regel in self.regeln]
         datenListe = [l.drop_duplicates(subset='FallDatum') for l in datenListe]
-
         daten = pd.concat(datenListe)
+        print('hallo')
         daten.to_excel(filePath, index=False)
+        print('test')
 
     def applyRegelToData(self, regel=None):
         if self.daten is None:
@@ -121,6 +143,12 @@ class DatenStruktur:
     def saveToFile(self,path):
         with path.with_suffix('.tpf').open('wb') as f:
             pickle.dump(self.regeln, f)
+
+    def renameRegel(self, from_, to_):
+        self.regeln = OrderedDict(
+                (to_ if k == from_ else k, v) 
+                for k, v in self.regeln.items()
+                )
 
     def openFromFile(self,path):
         with path.with_suffix('.tpf').open('rb') as f:
@@ -318,7 +346,19 @@ class RegelListe(AnzeigeListe):
     def __init__(self, parent,daten, *args, **kw):
         style = wx.LC_REPORT|wx.LC_NO_HEADER|wx.LC_HRULES|wx.LC_VIRTUAL|wx.LC_SINGLE_SEL
         AnzeigeListe.__init__(self, parent,daten, *args, style=style, **kw)
+        self.Bind(wx.EVT_LIST_ITEM_ACTIVATED, self.OnDoubleClick)
+        self.Bind(wx.EVT_LIST_ITEM_ACTIVATED, self.OnDoubleClick)
+        self.Bind(wx.EVT_LIST_END_LABEL_EDIT, self.LabelEdit)
         self.update()
+
+    def LabelEdit(self,event):
+        newLabel = event.GetLabel()
+        oldLabel = self.items[event.GetIndex()]
+        self.daten.renameRegel(oldLabel, newLabel)
+        self.update()
+
+    def OnDoubleClick(self,event):
+        self.EditLabel(event.GetIndex())
 
     def update(self):
         self.items = self.daten.getRegeln()
@@ -366,6 +406,7 @@ class ListePanel(wx.Panel):
         sizer = wx.GridBagSizer(5,5)
 
         txt = wx.StaticText(self, label=titel, style=wx.ALIGN_CENTRE_HORIZONTAL)
+        txt.SetToolTip(wx.ToolTip(tooltips[titel.lower()]))
         sizer.Add( txt, pos=(0,0), span=(1,4), flag=wx.EXPAND,border=15)
 
         self.listbox = self.getCtrlList()
@@ -374,7 +415,9 @@ class ListePanel(wx.Panel):
         def createBitmapButton(pfad, symbol):
             # bmp = wx.Bitmap(pfad, wx.BITMAP_TYPE_ICO) 
             # btn = wx.BitmapButton(self, bitmap = bmp, size=(30,30))
-            btn = wx.Button(self, label=symbol, size=(30,30))
+            btn = wx.Button(self, label=symbol, size=(50,30))
+            font = wx.Font(15, wx.DEFAULT, wx.NORMAL, wx.BOLD)
+            btn.SetFont(font)
             return btn
 
         self.newBtn = createBitmapButton('./Bilder/Plus.ico', '+')
@@ -523,7 +566,7 @@ class BedingungsPanel(ListePanel):
 
 class TarmedpaketGUI(wx.Frame):
     name = "Tarmed Pakete"
-    windowSize = (1000,600)
+    windowSize = (1300,800)
 
     panels = {}
 
