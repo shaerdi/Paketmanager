@@ -7,6 +7,7 @@ import pathlib
 import threading
 import pandas as pd
 
+
 class ExcelReader(threading.Thread):
     def __init__(self, parent, fname):
         threading.Thread.__init__(self)
@@ -28,6 +29,7 @@ class ExcelReader(threading.Thread):
                 evt.errMsg = '{}'.format(e)
 
         wx.PostEvent(self._parent, evt)
+
 
 class ExcelWriter(threading.Thread):
     def __init__(self, parent, fname, daten):
@@ -53,6 +55,7 @@ class ExcelWriter(threading.Thread):
 
         wx.PostEvent(self._parent, evt)
 
+
 EVT_RESULT_ID = 1001
 
 tooltips = {
@@ -62,8 +65,10 @@ tooltips = {
         'not' : 'Keine der Leistungen darf im Paket vorkommen',
 }
 
+
 def EVT_RESULT(win, func):
-    win.Connect(-1,-1, EVT_RESULT_ID, func)
+    win.Connect(-1, -1, EVT_RESULT_ID, func)
+
 
 class ResultEvent(wx.PyEvent):
     def __init__(self,
@@ -88,6 +93,7 @@ class Log:
 
     def write(self,text_string):
         wx.GetApp().GetTopWindow().SetStatusText(text_string)
+
 
 class DatenStruktur:
     Listen = []
@@ -221,6 +227,7 @@ class DatenStruktur:
         except:
             pass
 
+
 class BedingungswahlDialog(wx.Dialog):
     def __init__(self, parent, id, title, daten):
         wx.Dialog.__init__(self, parent, id, title)
@@ -303,7 +310,9 @@ class SummaryPanel(wx.Panel):
     def updateBedingung(self, num):
         self.anzahlPaketeBedingung.SetLabel( str(num) )
 
+
 class AnzeigeListe(wx.ListCtrl, wx.lib.mixins.listctrl.ListCtrlAutoWidthMixin):
+
     def __init__(self, parent,daten, *args, **kw):
         self._parent = parent
 
@@ -342,6 +351,7 @@ class AnzeigeListe(wx.ListCtrl, wx.lib.mixins.listctrl.ListCtrlAutoWidthMixin):
     def OnGetItemText(self, item, col):
         return self.items[item]
 
+
 class RegelListe(AnzeigeListe):
     def __init__(self, parent,daten, *args, **kw):
         style = wx.LC_REPORT|wx.LC_NO_HEADER|wx.LC_HRULES|wx.LC_VIRTUAL|wx.LC_SINGLE_SEL
@@ -367,6 +377,7 @@ class RegelListe(AnzeigeListe):
     def OnGetItemAttr(self, item):
         return None
 
+
 class BedingungsListe(AnzeigeListe):
     def __init__(self, parent,daten,titel, *args, **kw):
         AnzeigeListe.__init__(self, parent,daten, *args, **kw)
@@ -377,7 +388,6 @@ class BedingungsListe(AnzeigeListe):
 
         self.titel = titel.lower()
         self.update()
-        
 
     def update(self):
         self.items = self.daten.getAktiveRegel(self.titel)
@@ -400,7 +410,6 @@ class ListePanel(wx.Panel):
 
         self.InitUI(titel)
         self.SetupEvents()
-
 
     def InitUI(self,titel):
         sizer = wx.GridBagSizer(5,5)
@@ -507,6 +516,7 @@ class RegelPanel(ListePanel):
         self.daten.clearRegeln()
         self.updateAktiv()
 
+
 class BedingungsPanel(ListePanel):
     def __init__(self, *args, **kwargs):
         self.titel = kwargs.get('titel','').lower()
@@ -534,7 +544,6 @@ class BedingungsPanel(ListePanel):
             self.listbox.Focus(index+1)
         elif keycode == wx.WXK_DELETE or keycode == wx.WXK_NUMPAD_DELETE:
             self.DelItem(event)
-
 
     def NewItem(self, event):
         with BedingungswahlDialog(self,wx.ID_ANY, "Neue Bedingung", self.daten) as dlg:
@@ -582,7 +591,6 @@ class TarmedpaketGUI(wx.Frame):
         self.SetupEvents()
         self.Centre()
 
-
     def SetupEvents(self):
         self.Bind(wx.EVT_CLOSE, self.OnCloseFrame)
         self.Bind(wx.EVT_MENU, self.OnCloseFrame, self.fileMenuExitItem)
@@ -603,7 +611,6 @@ class TarmedpaketGUI(wx.Frame):
         filePath = pathlib.Path(saveFileDialog.GetPath())
         saveFileDialog.Destroy()
         self.daten.saveRegelnToExcel(filePath)
-
 
     def FinishExcelCalc(self, event):
         if event.success:
@@ -663,11 +670,10 @@ class TarmedpaketGUI(wx.Frame):
 
     def OnCloseFrame(self, event):
         self.OnExitApp(event)
-        return
-        dialog = wx.MessageDialog(self, message = "Programm wirklich Schliessen?", caption = "", style = wx.YES_NO, pos = wx.DefaultPosition)
+        dialog = wx.MessageDialog(self, message="Programm wirklich Schliessen?", caption="", style=wx.YES_NO, pos=wx.DefaultPosition)
         response = dialog.ShowModal()
 
-        if (response == wx.ID_YES):
+        if response == wx.ID_YES:
             self.OnExitApp(event)
         else:
             event.StopPropagation()
@@ -728,7 +734,7 @@ class TarmedpaketGUI(wx.Frame):
 
         mainBox.Add(hBox1,flag=wx.TOP|wx.LEFT|wx.RIGHT|wx.EXPAND, border=15)
 
-        #-----------------------------------
+        # -----------------------------------
         line = wx.StaticLine(panel)
         mainBox.Add(line, flag=wx.EXPAND|wx.BOTTOM|wx.TOP, border=15)
 
@@ -758,9 +764,9 @@ class TarmedpaketGUI(wx.Frame):
         panel.SetSizer(mainBox)
         
     def OpenExcel(self,e):
-        openFileDialog = wx.FileDialog(self, "Wählen", "", "", 
-                                      "Excel files (*.xlsx;*.xls)|*.xlsx;*.xls", 
-                                       wx.FD_OPEN | wx.FD_FILE_MUST_EXIST)
+        openFileDialog = wx.FileDialog(self, "Wählen", "", "Excel files (*.xlsx;*.xls)|*.xlsx;*.xls", "",
+                                        wx.FD_OPEN | wx.FD_FILE_MUST_EXIST
+                                       )
         if not openFileDialog.ShowModal() == wx.ID_OK:
             return
         filePath = openFileDialog.GetPath()
@@ -771,11 +777,11 @@ class TarmedpaketGUI(wx.Frame):
         self.Disable()
         self.excelWorker = ExcelReader(self, filePath)
 
-
-    def menuhandler(self, event): 
+    def menuhandler(self, event):
           id_ = event.GetId() 
           if id_ == wx.ID_EXIT: 
              self.Close()
+
 
 def main():
 
