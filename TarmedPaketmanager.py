@@ -21,15 +21,14 @@ class ExcelReader(threading.Thread):
             try:
                 result = datenEinlesen(self._fname)
                 if not result is None:
-                    daten,kategorien = result
+                    daten, kategorien = result
                     daten = createPakete(daten, kategorien)
                     evt.success = True
-                    evt.data = (daten,kategorien)
-            except IOError as e:
-                evt.errMsg = '{}'.format(e)
+                    evt.data = (daten, kategorien)
+            except IOError as error:
+                evt.errMsg = '{}'.format(error)
 
         wx.PostEvent(self._parent, evt)
-
 
 class ExcelWriter(threading.Thread):
     def __init__(self, parent, fname, daten):
@@ -46,12 +45,12 @@ class ExcelWriter(threading.Thread):
             try:
                 result = datenEinlesen(self._fname)
                 if not result is None:
-                    daten,kategorien = result
+                    daten, kategorien = result
                     daten = createPakete(daten, kategorien)
                     evt.success = True
-                    evt.data = (daten,kategorien)
-            except IOError as e:
-                evt.errMsg = '{}'.format(e)
+                    evt.data = (daten, kategorien)
+            except IOError as error:
+                evt.errMsg = '{}'.format(error)
 
         wx.PostEvent(self._parent, evt)
 
