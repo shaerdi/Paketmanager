@@ -1,14 +1,17 @@
-import wx
-import wx.lib.mixins.listctrl
 from collections import OrderedDict
-from ExcelCalc import datenEinlesen, createPakete, writePaketeToExcel
 import pickle
 import pathlib
 import threading
+import wx
+import wx.lib.mixins.listctrl
+
 import pandas as pd
+from ExcelCalc import datenEinlesen, createPakete, writePaketeToExcel
 
 
 class ExcelReader(threading.Thread):
+    """Thread, um ein Excel einzulesen"""
+
     def __init__(self, parent, fname):
         threading.Thread.__init__(self)
         self._parent = parent
@@ -17,10 +20,10 @@ class ExcelReader(threading.Thread):
 
     def run(self):
         evt = ResultEvent(success=False)
-        if not self._fname is None:
+        if self._fname is not None:
             try:
                 result = datenEinlesen(self._fname)
-                if not result is None:
+                if result is not None:
                     daten, kategorien = result
                     daten = createPakete(daten, kategorien)
                     evt.success = True
@@ -31,6 +34,7 @@ class ExcelReader(threading.Thread):
         wx.PostEvent(self._parent, evt)
 
 class ExcelWriter(threading.Thread):
+    """Thread, um ein Excel zu speichern"""
     def __init__(self, parent, fname, daten):
         threading.Thread.__init__(self)
         self._parent = parent
@@ -41,14 +45,10 @@ class ExcelWriter(threading.Thread):
     def run(self):
         evt = ResultEvent(success=False)
 
-        if not self._fname is None:
+        if self._fname is not None:
             try:
-                result = datenEinlesen(self._fname)
-                if not result is None:
-                    daten, kategorien = result
-                    daten = createPakete(daten, kategorien)
-                    evt.success = True
-                    evt.data = (daten, kategorien)
+                self._daten.to_excel(self._fname, index=False)
+                evt.success = True
             except IOError as error:
                 evt.errMsg = '{}'.format(error)
 
@@ -57,11 +57,11 @@ class ExcelWriter(threading.Thread):
 
 EVT_RESULT_ID = 1001
 
-tooltips = {
-        'regel' : 'Definierte Regeln',
-        'and' : 'Alle Leistungen müssen im Paket vorkommen',
-        'or' : 'Mindestens eine Leistung muss im Paket vorkommen',
-        'not' : 'Keine der Leistungen darf im Paket vorkommen',
+TOOLTIPS = {
+    'regel' : 'Definierte Regeln',
+    'and' : 'Alle Leistungen müssen im Paket vorkommen',
+    'or' : 'Mindestens eine Leistung muss im Paket vorkommen',
+    'not' : 'Keine der Leistungen darf im Paket vorkommen',
 }
 
 
@@ -70,28 +70,221 @@ def EVT_RESULT(win, func):
 
 
 class ResultEvent(wx.PyEvent):
+    """Event, der von einem Thread zurueck gegeben wird."""
     def __init__(self,
-            data = None,
-            success = True,
-            errMsg = '',
-            ):
+                 data=None,
+                 success=True,
+                 errMsg='',
+                ):
         wx.PyEvent.__init__(self)
         self.SetEventType(EVT_RESULT_ID)
-        self.data=data
+        self.data = data
         self.success = success
-        self.errMsg = ''
+        self.errMsg = errMsg
 
 
-class Log:
-    r"""\brief Needed by the wxdemos.
-    The log output is redirected to the status bar of the containing frame.
-    """
+class Regel:
+    """Stellt eine Regel dar, die ein Paket erfuellen kann oder nicht"""
 
-    def WriteText(self,text_string):
-        self.write(text_string)
+    AND = 0
+    OR = 1
+    NOT = 2
 
-    def write(self,text_string):
-        wx.GetApp().GetTopWindow().SetStatusText(text_string)
+    def __init__(self, name, daten):
+        self.name = name
+        self._bedingung_und = []
+        self._bedingung_oder = []
+        self._bedingung_nicht = []
+        self.anzahl = '-'
+        self._daten = daten
+        self._erfuellt = None
+
+    def add_leistung(self, new_item, bedingungs_art):
+        """Fuegt eine neue Leistung zur einer Liste hinzu
+
+        :new_item: Neue Leistung
+        :bedingungs_art: Regel.AND, OR oder NOT
+        """
+
+        if bedingungs_art == Regel.AND:
+            self._bedingung_und.append(new_item)
+        elif bedingungs_art == Regel.OR:
+            self._bedingung_oder.append(new_item)
+        elif bedingungs_art == Regel.NOT:
+            self._bedingung_nicht.append(new_item)
+        else:
+            raise RuntimeError("Unbekannte Bedingung")
+
+    def remove_leistung(self, index, bedingungs_art):
+        """Loescht eine Leistung aus einer Liste
+
+        :index: Index der zu loeschenden Leistung
+        :bedingungs_art: Regel.AND, OR oder NOT
+        """
+
+        if bedingungs_art == Regel.AND:
+            del self._bedingung_und[index]
+        elif bedingungs_art == Regel.OR:
+            del self._bedingung_oder[index]
+        elif bedingungs_art == Regel.NOT:
+            del self._bedingung_nicht[index]
+        else:
+            raise RuntimeError("Unbekannte Bedingung")
+
+    def update(self):
+        """Berechnet die Pakete, die diese Regel erfuellen"""
+
+        if self._daten is None:
+            self.anzahl = '-'
+            return
+
+        def erfuellt(key):
+            """Checkt, ob ein Key diese Regel erfuellt"""
+            erfuelltalle = all([(k in key) for k in self._bedingung_und])
+            erfuelltoder = len(self._bedingung_oder) == 0 or \
+                           any([(k in key) for k in self._bedingung_oder])
+            erfuelltnot  = all([(k not in key) for k in self._bedingung_nicht])
+            return  erfuelltalle and erfuelltoder and erfuelltnot
+
+        ind = self._daten.key.apply(erfuellt)
+        self._erfuellt = self._daten[ind]
+        self.anzahl = str(ind.sum)
+
+    def get_erfuellt(self):
+        """Gibt ein Dataframe zurueck, das alle Falldaten enthaelt, die diese
+        Regel erfuellen.
+
+        :return: Pandas DataFrame
+        """
+        return self._erfuellt.copy()
+
+
+class Regeln:
+    """Klasse, die die Regeln speichert"""
+
+    def __init__(self):
+        self.observers = []
+        self.regeln = []
+        self.aktiveRegel = None
+        self._excel_daten = None
+
+    def register_observer(self, observer):
+        """Registriert ein Observerobjekt, das per Aufrufen der Funktion update
+        auf Aenderungen aufmerksam gemacht wird.
+
+        :observer: Observer objekt. Muss die Funktion update haben
+
+        """
+        observer.regeln = self
+        self.observers.append(observer)
+
+    def notify_observers(self):
+        """Ruft die Methode update fuer alle Observer auf
+
+        """
+        for observer in self.observers:
+            observer.update()
+
+    @property
+    def excel_daten(self):
+        """Getter ecxel_daten"""
+        return self._excel_daten
+
+    @excel_daten.setter
+    def excel_daten(self, daten):
+        """Setter ecxel_daten"""
+        self._excel_daten = daten
+        self.update_regel()
+
+    def update_regel(self, index=None):
+        """Berechnet fuer die Regel die Anzahl der Pakete, die die Regel
+        erfuellen.
+
+        :index: Index der zu updatenden Regel. Alle, wenn None
+        """
+        if index is None:
+            for regel in self.regeln:
+                regel.update()
+        else:
+            self.regeln[index].update()
+
+    def add_regel(self, name):
+        """Fuegt eine neu Regel hinzu
+
+        :name: Name der neuen Regel
+        """
+        neue_regel = Regel(name, self._excel_daten)
+        self.regeln.append(neue_regel)
+
+    def rename_regel(self, index, neuer_name):
+        """Benennt eine Regel um.
+
+        :index: Index der Regel, die umbenannt wird
+        :neuer_name: Neuer Name
+        """
+        self.regeln[index].name = neuer_name
+
+    def remove_regel(self, index):
+        """Loescht eine Regel.
+
+        :index: Index, der geloscht wird.
+        """
+        del self.regeln[index]
+
+    def get_bedingungsliste(self, filename):
+        """Speichert ein Excel, in dem fuer jedes Falldatum eine Zeile fuer
+        jede Regel steht, die dieses Falldatum erfuellt
+
+        :filename: Pfad zur Datei
+        """
+
+        datenListe = [regel.get_erfuellt() for regel in self.regeln]
+        datenListe = [l.drop_duplicates(subset='FallDatum') for l in datenListe]
+        return pd.concat(datenListe)
+
+    def get_anzahl_falldaten(self):
+        """Gibt die Anzahl Falldaten zurueck
+
+        :return: Anzahl Falldaten
+        """
+
+        if self._excel_daten is not None:
+            return self.excel_daten.FallDatum.drop_duplicates().shape[0]
+        else:
+            return 0
+
+    def save_to_file(self,filename):
+        """Speichert die enthaltenen Regeln in ein File
+
+        :filename: Filename
+        """
+        path = pathlib.Path(filename)
+        with path.with_suffix('.tpf').open('wb') as f:
+            pickle.dump(self.regeln, f)
+
+    def load_from_file(self,filename):
+        """Laedt die Regeln aus einem File
+
+        :filename: Filename
+        """
+        path = pathlib.Path(filename)
+        with path.with_suffix('.tpf').open('rb') as f:
+            self.regeln = pickle.load(f)
+        self.update_regel()
+
+    def set_aktiv(self, index):
+        """Setzt die momentan aktive Regel
+
+        :index: Index der neuen aktiven Regel
+        """
+        if 0 <= index < len(self.regeln):
+            self.aktiveRegel = self.regeln[index]
+
+
+            
+
+
+
 
 
 class DatenStruktur:
@@ -320,32 +513,16 @@ class AnzeigeListe(wx.ListCtrl, wx.lib.mixins.listctrl.ListCtrlAutoWidthMixin):
 
         wx.ListCtrl.__init__(self, parent, **kw)
         wx.lib.mixins.listctrl.ListCtrlAutoWidthMixin.__init__(self)
-
-        self.log = Log()
-
         self.daten = daten
-
         self.daten.Listen.append(self)
-        
         self.InsertColumn(0,'')
-
         self.Bind(wx.EVT_KEY_DOWN, lambda e:wx.PostEvent(self._parent,e) )
 
     def OnItemSelected(self, event):
         self.currentItem = event.m_itemIndex
-        self.log.WriteText('OnItemSelected: "%s", "%s", "%s", "%s"\n' %
-                           (self.currentItem,
-                            self.GetItemText(self.currentItem),
-                            self.getColumnText(self.currentItem, 1),
-                            self.getColumnText(self.currentItem, 2)))
 
     def OnItemActivated(self, event):
         self.currentItem = event.m_itemIndex
-        self.log.WriteText("OnItemActivated: %s\nTopItem: %s\n" %
-                           (self.GetItemText(self.currentItem), self.GetTopItem()))
-
-    def OnItemDeselected(self, evt):
-        self.log.WriteText("OnItemDeselected: %s" % evt.m_itemIndex)
 
     def OnGetItemText(self, item, col):
         return self.items[item]
