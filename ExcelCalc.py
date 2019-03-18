@@ -125,7 +125,7 @@ def getFirstGroup(groups):
     for i,g in groups:
         return g
 
-def writePaketeToExcel(daten, kategorien, filename, ordner = 'Resultate'):
+def writePaketeToExcel(daten, kategorien, filename):
     #############################################
     # Ab jetzt der Code um das Excel zu schreiben
     #############################################

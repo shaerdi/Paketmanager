@@ -33,12 +33,13 @@ class ExcelReader(threading.Thread):
 
         wx.PostEvent(self._parent, evt)
 
-class ExcelWriter(threading.Thread):
+class ExcelPaketWriter(threading.Thread):
     """Thread, um ein Excel zu speichern"""
-    def __init__(self, parent, fname, daten):
+    def __init__(self, parent, fname, daten, kategorien):
         threading.Thread.__init__(self)
         self._parent = parent
         self._fname = fname
+        self._kategorien = kategorien
         self._daten = daten
         self.start()
 
@@ -47,7 +48,7 @@ class ExcelWriter(threading.Thread):
 
         if self._fname is not None:
             try:
-                self._daten.to_excel(self._fname, index=False)
+                writePaketeToExcel(self._daten, self._kategorien, self._fname)
                 evt.success = True
             except IOError as error:
                 evt.errMsg = '{}'.format(error)
@@ -86,9 +87,9 @@ class ResultEvent(wx.PyEvent):
 class Regel:
     """Stellt eine Regel dar, die ein Paket erfuellen kann oder nicht"""
 
-    AND = 0
-    OR = 1
-    NOT = 2
+    UND = 0
+    ODER = 1
+    NICHT = 2
 
     def __init__(self, name, daten):
         self.name = name
@@ -106,11 +107,11 @@ class Regel:
         :bedingungs_art: Regel.AND, OR oder NOT
         """
 
-        if bedingungs_art == Regel.AND:
+        if bedingungs_art == Regel.UND:
             self._bedingung_und.append(new_item)
-        elif bedingungs_art == Regel.OR:
+        elif bedingungs_art == Regel.ODER:
             self._bedingung_oder.append(new_item)
-        elif bedingungs_art == Regel.NOT:
+        elif bedingungs_art == Regel.NICHT:
             self._bedingung_nicht.append(new_item)
         else:
             raise RuntimeError("Unbekannte Bedingung")
@@ -122,11 +123,11 @@ class Regel:
         :bedingungs_art: Regel.AND, OR oder NOT
         """
 
-        if bedingungs_art == Regel.AND:
+        if bedingungs_art == Regel.UND:
             del self._bedingung_und[index]
-        elif bedingungs_art == Regel.OR:
+        elif bedingungs_art == Regel.ODER:
             del self._bedingung_oder[index]
-        elif bedingungs_art == Regel.NOT:
+        elif bedingungs_art == Regel.NICHT:
             del self._bedingung_nicht[index]
         else:
             raise RuntimeError("Unbekannte Bedingung")
@@ -157,6 +158,21 @@ class Regel:
         :return: Pandas DataFrame
         """
         return self._erfuellt.copy()
+
+    def getLeistungen(self, typ):
+        """Gibt die Leistungen im Typ der Regel zurueck
+
+        :typ: Regel.UND, Regel.ODER oder Regel.NICHT
+        :returns: Liste mit Leistungen
+        """
+        if bedingungs_art == Regel.UND:
+            return self._bedingung_und
+        elif bedingungs_art == Regel.ODER:
+            return self._bedingung_oder
+        elif bedingungs_art == Regel.NICHT:
+            return self._bedingung_nicht
+        else:
+            raise RuntimeError("Unbekannte Bedingung")
 
 
 class Regeln:
@@ -208,13 +224,14 @@ class Regeln:
         else:
             self.regeln[index].update()
 
-    def add_regel(self, name):
+    def addRegel(self, name):
         """Fuegt eine neu Regel hinzu
 
         :name: Name der neuen Regel
         """
         neue_regel = Regel(name, self._excel_daten)
         self.regeln.append(neue_regel)
+        self.notify_observers()
 
     def rename_regel(self, index, neuer_name):
         """Benennt eine Regel um.
@@ -223,6 +240,7 @@ class Regeln:
         :neuer_name: Neuer Name
         """
         self.regeln[index].name = neuer_name
+        self.notify_observers()
 
     def remove_regel(self, index):
         """Loescht eine Regel.
@@ -230,6 +248,18 @@ class Regeln:
         :index: Index, der geloscht wird.
         """
         del self.regeln[index]
+        self.notify_observers()
+
+    def checkItem(self, label):
+        """Prueft, ob eine Bedingung in den Daten vorhanden ist
+
+        :label: Name der Bedingung
+        :returns: True, wenn die Bedingung vorhanden ist
+        """
+        if self._excel_daten is None:
+            return False
+        else:
+            return item in self._excel_daten.Leistung.values
 
     def get_bedingungsliste(self, filename):
         """Speichert ein Excel, in dem fuer jedes Falldatum eine Zeile fuer
@@ -262,7 +292,7 @@ class Regeln:
         with path.with_suffix('.tpf').open('wb') as f:
             pickle.dump(self.regeln, f)
 
-    def load_from_file(self,filename):
+    def loadFromFile(self,filename):
         """Laedt die Regeln aus einem File
 
         :filename: Filename
@@ -281,143 +311,160 @@ class Regeln:
             self.aktiveRegel = self.regeln[index]
 
 
+class ExcelDaten:
+    """Objekt, das die Excel Daten enthaelt"""
+
+    def __init__(self, daten, kategorien=None):
+        self._dataframe = daten
+        self._kategorien = set(kategorien)
+
+    def addKategorie(self, kategorie):
+        """Fuegt eine Kategorie hinzu"""
+        self._kategorien.add(kategorie)
+
+    def calcUniqueLeistungen(self):
+        """Berechnet eine Liste mit allen Leistungen im Excel"""
+        leistungen = self.dataframe[self.daten['Leistungskategorie'] == 'Tarmed']['Leistung']
+        leistungen = leistungen.drop_duplicates()
+        ind = leistungen.str.contains(filter_)
+        self._leistungen = leistungen[ind].values
             
 
 
 
 
 
-class DatenStruktur:
-    Listen = []
-    kategorien = None
-    daten = None
+# class DatenStruktur:
+    # Listen = []
+    # kategorien = None
+    # daten = None
 
-    def __init__(self):
-        self.regeln = OrderedDict()
-        self.aktiv = ''
+    # def __init__(self):
+        # self.regeln = OrderedDict()
+        # self.aktiv = ''
 
-    def saveRegelnToExcel(self, filePath):
-        if self.daten is None:
-            return
-        datenListe = [self.applyRegelToData(regel) for regel in self.regeln]
-        datenListe = [l.drop_duplicates(subset='FallDatum') for l in datenListe]
-        daten = pd.concat(datenListe)
-        print('hallo')
-        daten.to_excel(filePath, index=False)
-        print('test')
+    # def saveRegelnToExcel(self, filePath):
+        # if self.daten is None:
+            # return
+        # datenListe = [self.applyRegelToData(regel) for regel in self.regeln]
+        # datenListe = [l.drop_duplicates(subset='FallDatum') for l in datenListe]
+        # daten = pd.concat(datenListe)
+        # print('hallo')
+        # daten.to_excel(filePath, index=False)
+        # print('test')
 
-    def applyRegelToData(self, regel=None):
-        if self.daten is None:
-            return
-        if regel is None:
-            regel = self.aktiv
-        aktiveRegel = self.regeln[regel or self.aktiv]
-        def erfuellt(key):
-            erfuelltAlle = all([ (    k in key) for k in aktiveRegel['and']])
-            erfuelltOder = len(aktiveRegel['or']) == 0 or \
-                           any([ (    k in key) for k in aktiveRegel['or']])
-            erfuelltNot  = all([ (not k in key) for k in aktiveRegel['not']])
-            return  erfuelltAlle and erfuelltOder and erfuelltNot
+    # def applyRegelToData(self, regel=None):
+        # if self.daten is None:
+            # return
+        # if regel is None:
+            # regel = self.aktiv
+        # aktiveRegel = self.regeln[regel or self.aktiv]
+        # def erfuellt(key):
+            # erfuelltAlle = all([ (    k in key) for k in aktiveRegel['and']])
+            # erfuelltOder = len(aktiveRegel['or']) == 0 or \
+                           # any([ (    k in key) for k in aktiveRegel['or']])
+            # erfuelltNot  = all([ (not k in key) for k in aktiveRegel['not']])
+            # return  erfuelltAlle and erfuelltOder and erfuelltNot
 
-        ind = self.daten.key.apply(erfuellt)
-        kopie = self.daten[ind].copy()
-        kopie.drop_duplicates(subset='FallDatum',inplace=True)
-        kopie['Regel'] = regel
-        return kopie
+        # ind = self.daten.key.apply(erfuellt)
+        # kopie = self.daten[ind].copy()
+        # kopie.drop_duplicates(subset='FallDatum',inplace=True)
+        # kopie['Regel'] = regel
+        # return kopie
 
-    def getAnzahlFalldaten(self):
-        if not self.daten is None:
-            return self.daten.FallDatum.drop_duplicates().shape[0]
-        else:
-            return 0
+    # def getAnzahlFalldaten(self):
+        # if not self.daten is None:
+            # return self.daten.FallDatum.drop_duplicates().shape[0]
+        # else:
+            # return 0
 
-    def writeDatenToExcel(self,filePath):
-        if not self.daten is None:
-            writePaketeToExcel(self.daten, self.kategorien, filePath)
-            return True
-        else:
-            return False
+    # def writeDatenToExcel(self,filePath):
+        # if not self.daten is None:
+            # writePaketeToExcel(self.daten, self.kategorien, filePath)
+            # return True
+        # else:
+            # return False
 
-    def saveToFile(self,path):
-        with path.with_suffix('.tpf').open('wb') as f:
-            pickle.dump(self.regeln, f)
+    # def saveToFile(self,path):
+        # with path.with_suffix('.tpf').open('wb') as f:
+            # pickle.dump(self.regeln, f)
 
-    def renameRegel(self, from_, to_):
-        self.regeln = OrderedDict(
-                (to_ if k == from_ else k, v) 
-                for k, v in self.regeln.items()
-                )
+    # def renameRegel(self, from_, to_):
+        # self.regeln = OrderedDict(
+                # (to_ if k == from_ else k, v) 
+                # for k, v in self.regeln.items()
+                # )
 
-    def openFromFile(self,path):
-        with path.with_suffix('.tpf').open('rb') as f:
-            self.regeln = pickle.load(f)
-        self.updateListen()
+    # def openFromFile(self,path):
+        # with path.with_suffix('.tpf').open('rb') as f:
+            # self.regeln = pickle.load(f)
+        # self.updateListen()
 
-    def setAktiv(self,name):
-        self.aktiv=name
+    # def setAktiv(self,name):
+        # self.aktiv=name
 
-    def CheckItem(self, item):
-        if self.daten is None:
-            return False
-        else:
-            return item in self.daten.Leistung.values
+    # def CheckItem(self, item):
+        # if self.daten is None:
+            # return False
+        # else:
+            # return item in self.daten.Leistung.values
 
-    def getLeistungen(self, filter_ = ''):
-        if self.daten is None:
-            return
-        leistungen = self.daten[self.daten['Leistungskategorie'] == 'Tarmed']['Leistung']
-        leistungen = leistungen.drop_duplicates()
-        ind = leistungen.str.contains(filter_)
-        return leistungen[ind].values
+    # def getLeistungen(self, filter_ = ''):
+        # if self.daten is None:
+            # return
+        # leistungen = self.daten[self.daten['Leistungskategorie'] == 'Tarmed']['Leistung']
+        # leistungen = leistungen.drop_duplicates()
+        # ind = leistungen.str.contains(filter_)
+        # return leistungen[ind].values
 
-    def getRegeln(self):
-        return list(self.regeln.keys())
+    # def getRegeln(self):
+        # return list(self.regeln.keys())
 
-    def deleteRegel(self,name):
-        self.regeln.pop(name)
+    # def deleteRegel(self,name):
+        # self.regeln.pop(name)
 
-    def clearRegeln(self):
-        self.regeln = OrderedDict()
+    # def clearRegeln(self):
+        # self.regeln = OrderedDict()
 
-    def addRegel(self,name):
-        if name in self.regeln:
-            return False
-        else:
-            self.regeln[name] = { 'and' : [], 'or' : [], 'not' : [] }
-            return True
+    # def addRegel(self,name):
+        # if name in self.regeln:
+            # return False
+        # else:
+            # self.regeln[name] = { 'and' : [], 'or' : [], 'not' : [] }
+            # return True
 
-    def deleteItem(self,titel,item):
-        if not titel in ['and','or','not']:
-            return
-        self.regeln[self.aktiv][titel].remove(item)
+    # def deleteItem(self,titel,item):
+        # if not titel in ['and','or','not']:
+            # return
+        # self.regeln[self.aktiv][titel].remove(item)
 
-    def clearItems(self, titel):
-        if not titel in ['and','or','not']:
-            return
-        self.regeln[self.aktiv][titel] = []
+    # def clearItems(self, titel):
+        # if not titel in ['and','or','not']:
+            # return
+        # self.regeln[self.aktiv][titel] = []
 
 
-    def addItem(self,titel,item):
-        if not titel in ['and','or','not']:
-            return
-        self.regeln[self.aktiv].append(item)
+    # def addItem(self,titel,item):
+        # if not titel in ['and','or','not']:
+            # return
+        # self.regeln[self.aktiv].append(item)
 
-    def getAktiveRegel(self,titel):
-        if titel in ['and','or','not'] and self.aktiv in self.regeln:
-            return self.regeln[self.aktiv][titel]
-        else:
-            return []
+    # def getAktiveRegel(self,titel):
+        # if titel in ['and','or','not'] and self.aktiv in self.regeln:
+            # return self.regeln[self.aktiv][titel]
+        # else:
+            # return []
 
-    def updateListen(self):
-        for l in self.Listen:
-            l.update()
-        self.updateSummaryPanel()
+    # def updateListen(self):
+        # for l in self.Listen:
+            # l.update()
+        # self.updateSummaryPanel()
 
-    def updateSummaryPanel(self):
-        try:
-            self.summaryPanel.updateBedingung( self.applyRegelToData().shape[0] )
-        except:
-            pass
+    # def updateSummaryPanel(self):
+        # try:
+            # self.summaryPanel.updateBedingung( self.applyRegelToData().shape[0] )
+        # except:
+            # pass
 
 
 class BedingungswahlDialog(wx.Dialog):
@@ -462,7 +509,7 @@ class BedingungswahlDialog(wx.Dialog):
         
     def SetList(self):
         self.helpList.Clear()
-        leistungen = self.daten.getLeistungen(self.insertTxt.GetValue())
+        leistungen = self.regeln.getLeistungen(self.insertTxt.GetValue())
         if not leistungen is None and not len(leistungen)==0:
             self.helpList.InsertItems(leistungen,0)
 
@@ -505,113 +552,143 @@ class SummaryPanel(wx.Panel):
 
 class AnzeigeListe(wx.ListCtrl, wx.lib.mixins.listctrl.ListCtrlAutoWidthMixin):
 
-    def __init__(self, parent,daten, *args, **kw):
+    def __init__(self, parent, regeln, *args, **kw):
         self._parent = parent
+        self.regeln = regeln
 
         if not 'style' in kw:
             kw['style'] = wx.LC_REPORT|wx.LC_NO_HEADER|wx.LC_HRULES|wx.LC_VIRTUAL
 
         wx.ListCtrl.__init__(self, parent, **kw)
         wx.lib.mixins.listctrl.ListCtrlAutoWidthMixin.__init__(self)
-        self.daten = daten
-        self.daten.Listen.append(self)
-        self.InsertColumn(0,'')
-        self.Bind(wx.EVT_KEY_DOWN, lambda e:wx.PostEvent(self._parent,e) )
 
-    def OnItemSelected(self, event):
-        self.currentItem = event.m_itemIndex
+        self.InsertColumn(0, '')
+        # self.Bind(wx.EVT_KEY_DOWN, lambda e:wx.PostEvent(self._parent,e))
 
-    def OnItemActivated(self, event):
-        self.currentItem = event.m_itemIndex
+    # def OnItemSelected(self, event):
+        # self.currentItem = event.m_itemIndex
+
+    # def OnItemActivated(self, event):
+        # self.currentItem = event.m_itemIndex
 
     def OnGetItemText(self, item, col):
         return self.items[item]
 
 
 class RegelListe(AnzeigeListe):
-    def __init__(self, parent,daten, *args, **kw):
+    def __init__(self, parent, regeln, *args, **kw):
         style = wx.LC_REPORT|wx.LC_NO_HEADER|wx.LC_HRULES|wx.LC_VIRTUAL|wx.LC_SINGLE_SEL
-        AnzeigeListe.__init__(self, parent,daten, *args, style=style, **kw)
+        AnzeigeListe.__init__(self, parent, regeln, *args, style=style, **kw)
         self.Bind(wx.EVT_LIST_ITEM_ACTIVATED, self.OnDoubleClick)
         self.Bind(wx.EVT_LIST_ITEM_ACTIVATED, self.OnDoubleClick)
         self.Bind(wx.EVT_LIST_END_LABEL_EDIT, self.LabelEdit)
+        regeln.register_observer(self)
         self.update()
 
     def LabelEdit(self,event):
+        """Methode, die nach dem Editieren eines Labels aufgerufen wird"""
         newLabel = event.GetLabel()
         oldLabel = self.items[event.GetIndex()]
-        self.daten.renameRegel(oldLabel, newLabel)
+        self.regeln.rename_regel(oldLabel, newLabel)
         self.update()
 
     def OnDoubleClick(self,event):
+        """Methode, die bei einem Doppelklick aufgerufen wird"""
         self.EditLabel(event.GetIndex())
 
     def update(self):
-        self.items = self.daten.getRegeln()
-        self.SetItemCount(len(self.items))
+        """Liest die Items neu ein"""
+        if self.regeln is not None:
+            self.items = [r.name for r in self.regeln.regeln]
+            self.SetItemCount(len(self.regeln.regeln))
 
-    def OnGetItemAttr(self, item):
-        return None
+    def deleteSelection(self):
+        """Loescht die aktuell selektierten Items
+        """
+        pass
 
 
 class BedingungsListe(AnzeigeListe):
-    def __init__(self, parent,daten,titel, *args, **kw):
-        AnzeigeListe.__init__(self, parent,daten, *args, **kw)
+    def __init__(self, parent, regeln, *args, **kw):
+        AnzeigeListe.__init__(self, parent, regeln, *args, **kw)
 
         self.normalItem = wx.ListItemAttr()
         self.redItem = wx.ListItemAttr()
         self.redItem.SetBackgroundColour(wx.Colour(255,204,204))
 
-        self.titel = titel.lower()
+        regeln.register_observer(self)
         self.update()
+        self._typ = None
+
+    def setType(self, typ):
+        """Setzt den Typ der Liste
+
+        :typ: Regel.UND, Regel.ODER oder Regel.NICHT
+
+        """
+        self._typ = typ
 
     def update(self):
-        self.items = self.daten.getAktiveRegel(self.titel)
-        self.SetItemCount(len(self.items))
+        """Setzt Listenitems neu
+        """
+        aktiveRegel = self.regeln.aktiveRegel
+        if aktiveRegel is not None:
+            self.items = aktiveRegel.getLeistungen(self.typ)
+            self.SetItemCount(len(self.items))
+        else:
+            self.items = []
+            self.SetItemCount(0)
 
     def OnGetItemAttr(self, item):
-        if self.daten.CheckItem(self.items[item]):
+        """Prueft, ob ein Item in den Daten vorhanden ist
+
+        :item: Index des zu pruefenden Items
+        """
+        if self.regeln.checkItem(self.items[item]):
             return self.normalItem
         else:
             return self.redItem
-
 
 class ListePanel(wx.Panel):
     def __init__(self, *args, **kwargs):
 
         titel = kwargs.pop('titel', '')
-        self.daten = kwargs.pop('daten', {})
+        self.regeln = kwargs.pop('regeln', {})
 
-        super(ListePanel,self).__init__(*args,**kwargs)
+        super(ListePanel, self).__init__(*args, **kwargs)
 
         self.InitUI(titel)
         self.SetupEvents()
+
+    def SetupEvents(self):
+        raise NotImplementedError()
+
+    def getCtrlList(self):
+        raise NotImplementedError()
 
     def InitUI(self,titel):
         sizer = wx.GridBagSizer(5,5)
 
         txt = wx.StaticText(self, label=titel, style=wx.ALIGN_CENTRE_HORIZONTAL)
-        txt.SetToolTip(wx.ToolTip(tooltips[titel.lower()]))
+        txt.SetToolTip(wx.ToolTip(TOOLTIPS[titel.lower()]))
         sizer.Add( txt, pos=(0,0), span=(1,4), flag=wx.EXPAND,border=15)
 
         self.listbox = self.getCtrlList()
         sizer.Add( self.listbox, pos=(1,0), span=(1,4), flag=wx.EXPAND|wx.BOTTOM,border=15)
 
-        def createBitmapButton(pfad, symbol):
-            # bmp = wx.Bitmap(pfad, wx.BITMAP_TYPE_ICO) 
-            # btn = wx.BitmapButton(self, bitmap = bmp, size=(30,30))
+        def create_button(symbol):
             btn = wx.Button(self, label=symbol, size=(50,30))
             font = wx.Font(15, wx.DEFAULT, wx.NORMAL, wx.BOLD)
             btn.SetFont(font)
             return btn
 
-        self.newBtn = createBitmapButton('./Bilder/Plus.ico', '+')
-        self.delBtn = createBitmapButton('./Bilder/Minus.ico', '-')
-        self.clrBtn = createBitmapButton('./Bilder/Clear.ico', 'X')
+        self.newBtn = create_button('+')
+        self.delBtn = create_button('-')
+        self.clrBtn = create_button('X')
 
-        sizer.Add( self.newBtn, pos=(2,0) )
-        sizer.Add( self.delBtn, pos=(2,1) )
-        sizer.Add( self.clrBtn, pos=(2,3) )
+        sizer.Add( self.newBtn, pos=(2,0))
+        sizer.Add( self.delBtn, pos=(2,1))
+        sizer.Add( self.clrBtn, pos=(2,3))
 
         sizer.AddGrowableRow(1)
         sizer.AddGrowableCol(2)
@@ -621,7 +698,7 @@ class ListePanel(wx.Panel):
 
 class RegelPanel(ListePanel):
     def __init__(self, *args, **kwargs):
-        super(RegelPanel,self).__init__(*args,**kwargs)
+        super(RegelPanel, self).__init__(*args, **kwargs)
         self.setFocus()
 
     def setFocus(self, index = 0):
@@ -633,52 +710,19 @@ class RegelPanel(ListePanel):
         self.updateAktiv(index)
 
     def getCtrlList(self):
-        return RegelListe(self, self.daten, size=(70,-1))
+        return RegelListe(self, self.regeln, size=(70,-1))
 
     def SetupEvents(self):
         self.Bind(wx.EVT_BUTTON, self.NewItem, id=self.newBtn.GetId())
         self.Bind(wx.EVT_BUTTON, self.DelItem, id=self.delBtn.GetId())
         self.Bind(wx.EVT_BUTTON, self.ClrItem, id=self.clrBtn.GetId())
-        self.Bind(wx.EVT_LIST_ITEM_SELECTED, self.OnClickItem, self.listbox)
-        self.Bind(wx.EVT_KEY_DOWN, self.OnKeyPress)
 
-    def OnKeyPress(self,event):
-        keycode = event.GetKeyCode()
-
-        index = self.listbox.GetFocusedItem()
-        if index < 0:
-            return
-
-        if keycode == wx.WXK_UP and index > 0:
-            self.listbox.Select(index-1)
-            self.listbox.Focus(index-1)
-        elif keycode == wx.WXK_DOWN and index < self.listbox.GetItemCount()-1:
-            self.listbox.Select(index+1)
-            self.listbox.Focus(index+1)
-        elif keycode == wx.WXK_DELETE or keycode == wx.WXK_NUMPAD_DELETE:
-            self.DelItem(event)
-
-    def OnClickItem(self, event):
-        ind = event.GetIndex()
-        self.updateAktiv(ind)
-
-    def updateAktiv(self,ind=0):
-        items  = self.listbox.items
-        if len(items) > ind:
-            self.daten.setAktiv(items[ind])
-        else:
-            self.daten.setAktiv('')
-
-        self.daten.updateSummaryPanel()
-        self.daten.updateListen()
-        
     def NewItem(self, event):
         text = wx.GetTextFromUser('Enter a new item', 'Insert dialog')
         if text != '':
-            self.daten.addRegel(text)
-            self.daten.updateListen()
-            self.listbox.Select( len(self.daten.regeln) -1 )
-            self.listbox.Focus( len(self.daten.regeln) -1 )
+            self.regeln.addRegel(text)
+            self.listbox.Select( len(self.regeln.regeln) -1 )
+            self.listbox.Focus( len(self.regeln.regeln) -1 )
 
     def DelItem(self, event):
         index = self.listbox.GetFirstSelected()
@@ -695,11 +739,19 @@ class RegelPanel(ListePanel):
 
 class BedingungsPanel(ListePanel):
     def __init__(self, *args, **kwargs):
-        self.titel = kwargs.get('titel','').lower()
+        self.titel = kwargs.get('titel', '').lower()
+        self.typ = {
+            "and" : Regel.UND,
+            "or" : Regel.ODER,
+            "not" : Regel.NICHT,
+           }[self.titel]
+
         super().__init__(*args,**kwargs)
 
     def getCtrlList(self):
-        return BedingungsListe(self, self.daten, self.titel, size=(100,-1))
+        liste = BedingungsListe(self, self.regeln, size=(100, -1))
+        liste.setType(self.typ)
+        return liste
 
     def SetupEvents(self):
         self.Bind(wx.EVT_BUTTON, self.NewItem, id=self.newBtn.GetId())
@@ -707,7 +759,7 @@ class BedingungsPanel(ListePanel):
         self.Bind(wx.EVT_BUTTON, self.ClrItem, id=self.clrBtn.GetId())
         self.Bind(wx.EVT_KEY_DOWN, self.OnKeyPress)
 
-    def OnKeyPress(self,event):
+    def OnKeyPress(self, event):
         keycode = event.GetKeyCode()
 
         index = self.listbox.GetFocusedItem()
@@ -722,16 +774,12 @@ class BedingungsPanel(ListePanel):
             self.DelItem(event)
 
     def NewItem(self, event):
-        with BedingungswahlDialog(self,wx.ID_ANY, "Neue Bedingung", self.daten) as dlg:
+        with BedingungswahlDialog(self, wx.ID_ANY, "Neue Bedingung", self.regeln) as dlg:
             if dlg.ShowModal() == wx.ID_OK:
                 text = dlg.GetValue()
-                if text != '' and self.daten.aktiv in self.daten.regeln:
-                    aktiveRegel = self.daten.regeln[self.daten.aktiv]
-                    self.daten.regeln[self.daten.aktiv][self.titel].append(
-                            text
-                            )
-                    self.listbox.update()
-                    self.daten.updateSummaryPanel()
+                aktiveRegel = self.regeln.aktiveRegel
+                if text != '' and aktiveRegel is not None:
+                    aktiveRegel.add_leistung(text, self.typ)
 
     def DelItem(self, event):
         index = self.listbox.GetFirstSelected()
@@ -741,12 +789,11 @@ class BedingungsPanel(ListePanel):
             index = self.listbox.GetNextSelected(index)
 
         for item in itemsToDelete:
-            self.daten.deleteItem(self.titel, item)
-        self.daten.updateListen()
+            self.regeln.deleteItem(self.titel, item)
 
     def ClrItem(self, event):
-        self.daten.clearItems(self.titel)
-        self.daten.updateListen()
+        self.regeln.clearItems(self.titel)
+        self.regeln.updateListen()
 
 
 class TarmedpaketGUI(wx.Frame):
@@ -761,7 +808,7 @@ class TarmedpaketGUI(wx.Frame):
                 size=self.windowSize,
                 )
 
-        self.daten = DatenStruktur()
+        self.regeln = Regeln()
 
         self.InitUI()
         self.SetupEvents()
@@ -779,29 +826,34 @@ class TarmedpaketGUI(wx.Frame):
         EVT_RESULT(self, self.FinishExcelCalc)
 
     def OnSaveRegelExcel(self,event):
-        saveFileDialog = wx.FileDialog(self, "Speichern unter", "", "", 
-                                      "Excel files (*.xlsx; *.xls)|*.xlsx;*.xls", 
-                                       wx.FD_SAVE,
-                                       )
+        saveFileDialog = wx.FileDialog(
+                self,
+                "Speichern unter", "", "", 
+                "Excel files (*.xlsx; *.xls)|*.xlsx;*.xls", 
+                wx.FD_SAVE,
+               )
         saveFileDialog.ShowModal()
         filePath = pathlib.Path(saveFileDialog.GetPath())
         saveFileDialog.Destroy()
-        self.daten.saveRegelnToExcel(filePath)
+        # TODO:
+        # self.regeln.save_to_file(filePath)
 
     def FinishExcelCalc(self, event):
         if event.success:
-            self.daten.daten = event.data[0]
-            self.daten.kategorien = event.data[1]
-            self.summaryPanel.updateTotal( self.daten.getAnzahlFalldaten() )
-            self.daten.updateSummaryPanel()
+            self.regeln.excel_daten = event.data[0]
+            # TODO
+            # self.daten.kategorien = event.data[1]
+            # self.summaryPanel.updateTotal( self.regeln.get_anzahl_falldaten() )
+            # self.daten.updateSummaryPanel()
         else:
             if event.errMsg:
                 wx.MessageBox(
-                        message=event.errMsg,
-                        caption='Fehler',
-                        style=wx.OK | wx.ICON_INFORMATION,
-                        )
-            self.daten.daten, self.daten.kategorien = None,None
+                    message=event.errMsg,
+                    caption='Fehler',
+                    style=wx.OK | wx.ICON_INFORMATION,
+                   )
+            self.regeln.excel_daten = None
+            # self.daten.kategorien = None,None
 
         self.excelWorker = None
         self.Enable()
@@ -811,23 +863,27 @@ class TarmedpaketGUI(wx.Frame):
         self.Destroy()
 
     def OnSaveRule(self, event):
-        saveFileDialog = wx.FileDialog(self, "Speichern unter", "", "", 
-                                      "TarmedPaketGUI files (*.tpf)|*.tpf", 
-                                       wx.FD_SAVE,
-                                       )
+        saveFileDialog = wx.FileDialog(
+            self, 
+            "Speichern unter", "", "", 
+            "TarmedPaketGUI files (*.tpf)|*.tpf", 
+            wx.FD_SAVE,
+           )
         saveFileDialog.ShowModal()
-        filePath = pathlib.Path(saveFileDialog.GetPath())
+        file_path = pathlib.Path(saveFileDialog.GetPath())
         saveFileDialog.Destroy()
-        self.daten.saveToFile(filePath)
+        self.regeln.save_to_file(file_path)
 
     def OnSaveExcel(self, event):
-        saveFileDialog = wx.FileDialog(self, "Speichern unter", "", "", 
-                                      "Excel files (*.xlsx; *.xls)|*.xlsx;*.xls", 
-                                       wx.FD_SAVE,
-                                       )
+        saveFileDialog = wx.FileDialog(
+            self, 
+            "Speichern unter", "", "",
+            "Excel files (*.xlsx; *.xls)|*.xlsx;*.xls",
+            wx.FD_SAVE,
+           )
         saveFileDialog.ShowModal()
         filePath = pathlib.Path(saveFileDialog.GetPath())
-        if not self.daten.writeDatenToExcel(filePath):
+        if not self.regeln.writeDatenToExcel(filePath):
             wx.MessageBox('Noch keine Daten vorhanden', 'Info',
                     wx.OK | wx.ICON_INFORMATION,
                     )
@@ -842,7 +898,7 @@ class TarmedpaketGUI(wx.Frame):
         openFileDialog.ShowModal()
         filePath = pathlib.Path(openFileDialog.GetPath())
         openFileDialog.Destroy()
-        self.daten.openFromFile(filePath)
+        self.regeln.loadFromFile(filePath)
 
     def OnCloseFrame(self, event):
         self.OnExitApp(event)
@@ -919,11 +975,10 @@ class TarmedpaketGUI(wx.Frame):
         ruleBox = wx.StaticBox(panel, label= "Regeln")
         ruleBoxSizer = wx.StaticBoxSizer(ruleBox, wx.HORIZONTAL)
         
-        # tc = wx.TextCtrl(panel)
-        pl = RegelPanel(panel, titel='Regel', daten=self.daten)
-        pl1 = BedingungsPanel(panel, titel='AND', daten=self.daten)
-        pl2 = BedingungsPanel(panel, titel='OR', daten=self.daten)
-        pl3 = BedingungsPanel(panel, titel='NOT', daten=self.daten)
+        pl = RegelPanel(panel, titel='Regel', regeln=self.regeln)
+        pl1 = BedingungsPanel(panel, titel='AND', regeln=self.regeln)
+        pl2 = BedingungsPanel(panel, titel='OR', regeln=self.regeln)
+        pl3 = BedingungsPanel(panel, titel='NOT', regeln=self.regeln)
         ruleBoxSizer.Add(pl, proportion=1,flag=wx.EXPAND|wx.ALL, border=15)
         ruleBoxSizer.Add(pl1, proportion=1,flag=wx.EXPAND|wx.ALL, border=15)
         ruleBoxSizer.Add(pl2, proportion=1,flag=wx.EXPAND|wx.ALL, border=15)
@@ -931,9 +986,9 @@ class TarmedpaketGUI(wx.Frame):
 
         hBox2.Add(ruleBoxSizer, proportion = 2, flag=wx.EXPAND|wx.ALL, border=15)
 
-        self.summaryPanel = SummaryPanel(panel)
-        self.daten.summaryPanel = self.summaryPanel
-        hBox2.Add(self.summaryPanel, proportion = 1, flag=wx.EXPAND|wx.ALL, border=15)
+        # self.summaryPanel = SummaryPanel(panel)
+        # self.daten.summaryPanel = self.summaryPanel
+        # hBox2.Add(self.summaryPanel, proportion = 1, flag=wx.EXPAND|wx.ALL, border=15)
 
         mainBox.Add(hBox2, proportion=1,flag=wx.LEFT|wx.RIGHT|wx.EXPAND, border=15)
 
