@@ -31,7 +31,8 @@ class ExcelReader(threading.Thread):
             else:
                 success = False
 
-            wx.CallAfter(pub.sendMessage,
+            wx.CallAfter(
+                pub.sendMessage,
                 'excel.read',
                 success=success,
                 data=result,
@@ -57,7 +58,7 @@ class ExcelPaketWriter(threading.Thread):
     def run(self):
         try:
             writePaketeToExcel(self._daten, self._kategorien, self._fname)
-            wx.CallAfter(pub.sendMessage('excel.write', success=True))
+            wx.CallAfter(pub.sendMessage, 'excel.write', success=True)
         except Exception as error:
             errMsg = '{}'.format(error)
             wx.CallAfter(pub.sendMessage,
@@ -79,7 +80,7 @@ class ExcelDataFrameWriter(threading.Thread):
     def run(self):
         try:
             self._dataframe.to_excel(self._fname, index=False)
-            wx.CallAfter(pub.sendMessage('excel.write', success=True))
+            wx.CallAfter(pub.sendMessage, 'excel.write', success=True)
         except Exception as error:
             errMsg = '{}'.format(error)
             wx.CallAfter(pub.sendMessage,
@@ -228,6 +229,9 @@ class Regel:
         else:
             raise RuntimeError("Unbekannte Bedingung")
 
+class UIError(Exception):
+    pass
+
 class ObserverSubject:
     """Klasse, die eine Liste von Observern hat und diese updaten kann"""
 
@@ -316,6 +320,10 @@ class Regeln(ObserverSubject):
         :returns: Pandas Dataframe
         """
 
+        if not self.regeln:
+            raise UIError("Keine Regeln definiert")
+        if self._excelDaten.dataframe is None:
+            raise UIError("Noch keine Daten vorhanden")
         datenListe = [regel.getErfuellt() for regel in self.regeln]
         datenListe = [l.drop_duplicates(subset='FallDatum') for l in datenListe]
         return pd.concat(datenListe)
@@ -341,6 +349,12 @@ class Regeln(ObserverSubject):
         path = pathlib.Path(filename)
         with path.with_suffix('.tpf').open('rb') as f:
             regelnDict = pickle.load(f)
+
+        if (
+                not isinstance(regelnDict, dict)
+                or ({'UND', 'ODER', 'NICHT'} - regelnDict.keys())
+        ):
+            raise UIError("Fehler beim Laden der Regeln, ungültiges File")
 
         self.regeln = []
         for name, bedingungen in regelnDict.items():
@@ -950,9 +964,15 @@ class TarmedpaketGUI(wx.Frame):
         :success: Bool ob erfolgreich
         :errMsg: Fehlermeldung
         """
+        if not success and msg is not None:
+            wx.MessageBox(
+                msg,
+                'Fehler',
+                wx.OK | wx.ICON_ERROR,
+            )
+
         self._currentWorker = None
-        self.SetCursor(wx.Cursor(wx.CURSOR_ARROW))
-        self.Enable()
+        self.enableWindow()
 
     def onSaveRegelExcel(self,event):
         saveFileDialog = wx.FileDialog(
@@ -966,12 +986,19 @@ class TarmedpaketGUI(wx.Frame):
         saveFileDialog.ShowModal()
         filePath = pathlib.Path(saveFileDialog.GetPath())
         saveFileDialog.Destroy()
-        dataframe = self.regeln.getBedingungsliste()
-        print(dataframe)
+        try:
+            dataframe = self.regeln.getBedingungsliste()
+            self.disableWindow()
+            self._currentWorker = ExcelDataFrameWriter(self, filePath, dataframe)
+        except UIError as error:
+            wx.MessageBox(
+                "{}".format(error),
+                'Fehler',
+                wx.OK | wx.ICON_ERROR,
+            )
 
-        self._currentWorker = ExcelDataFrameWriter(self, filePath, dataframe)
 
-    def onFinishExcelCalc(self, data, success, errMsg=None):
+    def onFinishExcelCalc(self, success, data=None, msg=None):
         """ Funktion, die nach dem Lesen eines Excels aufgerufen wird
 
         :data: Tuple mit Dataframe und Kategorienliste
@@ -996,8 +1023,7 @@ class TarmedpaketGUI(wx.Frame):
                 )
 
         self._currentWorker = None
-        self.SetCursor(wx.Cursor(wx.CURSOR_ARROW))
-        self.Enable()
+        self.enableWindow()
 
     def onExitApp(self, event):
         self.Destroy()
@@ -1023,21 +1049,24 @@ class TarmedpaketGUI(wx.Frame):
            )
         saveFileDialog.ShowModal()
         filePath = pathlib.Path(saveFileDialog.GetPath())
+        saveFileDialog.Destroy()
 
-        result = ExcelPaketWriter(
-            self,
-            filePath,
-            self.daten.dataframe,
-            self.daten.getKategorien(),
-        )
-
-        if not result:
+        if self.daten.dataframe is None:
             wx.MessageBox(
                 'Noch keine Daten vorhanden',
                 'Info',
                 wx.OK | wx.ICON_INFORMATION,
             )
-        saveFileDialog.Destroy()
+            return
+
+        if filePath:
+            self.disableWindow()
+            self._currentWorker = ExcelPaketWriter(
+                self,
+                filePath,
+                self.daten.dataframe,
+                self.daten.getKategorien(),
+            )
 
 
     def onLoadRule(self, event):
@@ -1048,7 +1077,14 @@ class TarmedpaketGUI(wx.Frame):
         openFileDialog.ShowModal()
         filePath = pathlib.Path(openFileDialog.GetPath())
         openFileDialog.Destroy()
-        self.regeln.loadFromFile(filePath)
+        try:
+            self.regeln.loadFromFile(filePath)
+        except UIError as error:
+            wx.MessageBox(
+                message='{}'.format(error),
+                caption='Fehler',
+                style=wx.OK | wx.ICON_ERROR,
+            )
 
     def onCloseFrame(self, event):
         dialog = wx.MessageDialog(self, message="Programm wirklich Schliessen?", caption="", style=wx.YES_NO, pos=wx.DefaultPosition)
@@ -1171,11 +1207,19 @@ class TarmedpaketGUI(wx.Frame):
             return
         filePath = openFileDialog.GetPath()
         openFileDialog.Destroy()
-
-        self.SetCursor(wx.Cursor(wx.CURSOR_WAIT))
+        self.disableWindow()
         self.excelPath.SetValue(filePath)
-        self.Disable()
         self._currentWorker = ExcelReader(self, filePath)
+
+    def disableWindow(self):
+        """Schaltet das Fenster in den Wartemodus"""
+        self.SetCursor(wx.Cursor(wx.CURSOR_WAIT))
+        self.Disable()
+
+    def enableWindow(self):
+        """Schaltet den Wartemodus aus"""
+        self.SetCursor(wx.Cursor(wx.CURSOR_ARROW))
+        self.Enable()
 
     def menuhandler(self, event):
         """Funktion, die ein MenuEvent handled"""

@@ -157,7 +157,7 @@ def writePaketeToExcel(daten, kategorien, filename):
     sheetSchreiben('AllePakete', allePakete ,writer)
 
     # Pro Kategorie
-    for kategorie in kategorien.tolist() + ['Restgruppe','OhneTarmed']:
+    for kategorie in kategorien + ['Restgruppe','OhneTarmed']:
         katData = daten[daten['Kategorie']==kategorie].drop('Kategorie',axis=1)
         try:
             katData = pd.concat(sorted([
