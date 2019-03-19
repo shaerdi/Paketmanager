@@ -86,9 +86,9 @@ class ResultEvent(wx.PyEvent):
 class Regel:
     """Stellt eine Regel dar, die ein Paket erfuellen kann oder nicht"""
 
-    AND = 0
-    OR = 1
-    NOT = 2
+    UND = 0
+    ODER = 1
+    NICHT = 2
 
     def __init__(self, name, daten):
         self.name = name
@@ -103,14 +103,14 @@ class Regel:
         """Fuegt eine neue Leistung zur einer Liste hinzu
 
         :new_item: Neue Leistung
-        :bedingungs_art: Regel.AND, OR oder NOT
+        :bedingungs_art: Regel.UND, ODER oder NICHT
         """
 
-        if bedingungs_art == Regel.AND:
+        if bedingungs_art == Regel.UND:
             self._bedingung_und.append(new_item)
-        elif bedingungs_art == Regel.OR:
+        elif bedingungs_art == Regel.ODER:
             self._bedingung_oder.append(new_item)
-        elif bedingungs_art == Regel.NOT:
+        elif bedingungs_art == Regel.NICHT:
             self._bedingung_nicht.append(new_item)
         else:
             raise RuntimeError("Unbekannte Bedingung")
@@ -119,14 +119,14 @@ class Regel:
         """Loescht eine Leistung aus einer Liste
 
         :index: Index der zu loeschenden Leistung
-        :bedingungs_art: Regel.AND, OR oder NOT
+        :bedingungs_art: Regel.UND, ODER oder NICHT
         """
 
-        if bedingungs_art == Regel.AND:
+        if bedingungs_art == Regel.UND:
             del self._bedingung_und[index]
-        elif bedingungs_art == Regel.OR:
+        elif bedingungs_art == Regel.ODER:
             del self._bedingung_oder[index]
-        elif bedingungs_art == Regel.NOT:
+        elif bedingungs_art == Regel.NICHT:
             del self._bedingung_nicht[index]
         else:
             raise RuntimeError("Unbekannte Bedingung")
@@ -143,7 +143,7 @@ class Regel:
             erfuelltalle = all([(k in key) for k in self._bedingung_und])
             erfuelltoder = len(self._bedingung_oder) == 0 or \
                            any([(k in key) for k in self._bedingung_oder])
-            erfuelltnot  = all([(k not in key) for k in self._bedingung_nicht])
+            erfuelltnot = all([(k not in key) for k in self._bedingung_nicht])
             return  erfuelltalle and erfuelltoder and erfuelltnot
 
         ind = self._daten.key.apply(erfuellt)
