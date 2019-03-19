@@ -5,7 +5,7 @@ import pathlib
 import threading
 import wx
 import wx.lib.mixins.listctrl
-from wx.lib.pubsub import Publisher
+from wx.lib.pubsub import pub
 
 import pandas as pd
 from ExcelCalc import datenEinlesen, createPakete, writePaketeToExcel
@@ -21,19 +21,28 @@ class ExcelReader(threading.Thread):
         self.start()
 
     def run(self):
-        evt = FinishExcelReadEvent(ExcelReadEventType, -1)
-        if self._fname is not None:
-            try:
-                result = datenEinlesen(self._fname)
-                if result is not None:
-                    daten, kategorien = result
-                    daten = createPakete(daten, kategorien)
-                    evt.success = True
-                    evt.data = (daten, kategorien)
-            except IOError as error:
-                evt.errMsg = '{}'.format(error)
+        try:
+            result = datenEinlesen(self._fname)
+            if result is not None:
+                daten, kategorien = result
+                daten = createPakete(daten, kategorien)
+                success = True
+                result = (daten, kategorien)
+            else:
+                success = False
 
-        wx.PostEvent(self._parent, evt)
+            wx.CallAfter(pub.sendMessage,
+                'excel.read',
+                success=success,
+                data=result,
+            )
+        except Exception as error:
+            errMsg = '{}'.format(error)
+            wx.CallAfter(pub.sendMessage,
+                'excel.read',
+                success=False,
+                msg=errMsg,
+            )
 
 class ExcelPaketWriter(threading.Thread):
     """Thread, um ein Excel zu speichern"""
@@ -46,15 +55,17 @@ class ExcelPaketWriter(threading.Thread):
         self.start()
 
     def run(self):
-        evt = ResultEvent(success=False)
-        if self._fname is not None:
-            try:
-                writePaketeToExcel(self._daten, self._kategorien, self._fname)
-                evt.success = True
-            except IOError as error:
-                evt.errMsg = '{}'.format(error)
+        try:
+            writePaketeToExcel(self._daten, self._kategorien, self._fname)
+            wx.CallAfter(pub.sendMessage('excel.write', success=True))
+        except Exception as error:
+            errMsg = '{}'.format(error)
+            wx.CallAfter(pub.sendMessage,
+                'excel.write',
+                success=False,
+                msg=errMsg,
+            )
 
-        wx.PostEvent(self._parent, evt)
 
 class ExcelDataFrameWriter(threading.Thread):
     """Thread, um ein Dataframe in ein Excel zu speichern"""
@@ -66,26 +77,17 @@ class ExcelDataFrameWriter(threading.Thread):
         self.start()
 
     def run(self):
-        evt = ResultEvent(success=False)
-        if self._fname is not None:
-            try:
-                self._dataframe.to_excel(self._fname, index=False)
-                evt.success = True
-            except IOError as error:
-                evt.errMsg = '{}'.format(error)
-        wx.PostEvent(self._parent, evt)
+        try:
+            self._dataframe.to_excel(self._fname, index=False)
+            wx.CallAfter(pub.sendMessage('excel.write', success=True))
+        except Exception as error:
+            errMsg = '{}'.format(error)
+            wx.CallAfter(pub.sendMessage,
+                'excel.write',
+                success=False,
+                msg=errMsg,
+            )
 
-
-ExcelReadEventType = wx.NewEventType()
-EVT_FINISH_EXCEL_READ = wx.PyEventBinder(excelReadEventType, 1)
-
-class FinishExcelReadEvent(wx.PyCommandEvent):
-    """Event, der vom ExcelReader Thread zurueck gegeben wird."""
-    def __init__(self, evtType, eventID):
-        wx.PyCommandEvent.__init__(self, evtType, eventID)
-        self.data = None
-        self.success = False
-        self.errMsg = ''
 
 TOOLTIPS = {
     'regel' : 'Definierte Regeln',
@@ -138,6 +140,7 @@ class Regel:
             self._bedingungNicht.append(newItem)
         else:
             raise RuntimeError("Unbekannte Bedingung")
+        self.update()
         self._notifyFunc()
 
     def removeLeistung(self, index, typ):
@@ -155,6 +158,7 @@ class Regel:
             del self._bedingungNicht[index]
         else:
             raise RuntimeError("Unbekannte Bedingung")
+        self.update()
         self._notifyFunc()
 
     def clearItems(self, typ):
@@ -172,12 +176,13 @@ class Regel:
             self._bedingungNicht = []
         else:
             raise RuntimeError("Unbekannte Bedingung")
+        self.update()
         self._notifyFunc()
 
     def update(self):
         """Berechnet die Pakete, die diese Regel erfuellen"""
 
-        if self._daten is None:
+        if self._daten.dataframe is None:
             self.anzahl = '-'
             return
 
@@ -189,8 +194,8 @@ class Regel:
             erfuelltnot = all([(k not in key) for k in self._bedingungNicht])
             return  erfuelltalle and erfuelltoder and erfuelltnot
 
-        ind = self._daten.key.apply(erfuellt)
-        self._erfuellt = self._daten[ind]
+        ind = self._daten.dataframe.key.apply(erfuellt)
+        self._erfuellt = self._daten.dataframe[ind]
         self.anzahl = str(ind.sum)
 
     def getErfuellt(self):
@@ -199,7 +204,14 @@ class Regel:
 
         :return: Pandas DataFrame
         """
-        return self._erfuellt.copy()
+        try:
+            kopie = self._erfuellt.copy()
+            kopie['Regel'] = self.name
+            return kopie
+        except AttributeError:
+            spalten = self._daten.dataframe.columns
+            spalten.append('Regel')
+            return pd.DataFrame(columns=spalten)
 
     def getLeistungen(self, typ):
         """Gibt die Leistungen im Typ der Regel zurueck
@@ -216,15 +228,11 @@ class Regel:
         else:
             raise RuntimeError("Unbekannte Bedingung")
 
-
-class Regeln:
-    """Klasse, die die Regeln speichert"""
+class ObserverSubject:
+    """Klasse, die eine Liste von Observern hat und diese updaten kann"""
 
     def __init__(self):
-        self.observers = []
-        self.regeln = []
-        self.aktiveRegel = None
-        self._excelDaten = None
+        self._observer = []
 
     def registerObserver(self, observer):
         """Registriert ein Observerobjekt, das per Aufrufen der Funktion update
@@ -233,26 +241,30 @@ class Regeln:
         :observer: Observer objekt. Muss die Funktion update haben
 
         """
-        observer.regeln = self
-        self.observers.append(observer)
+        self._observer.append(observer)
 
     def notifyObserver(self):
         """Ruft die Methode update fuer alle Observer auf
 
         """
-        for observer in self.observers:
+        for observer in self._observer:
             observer.update()
 
-    @property
-    def excelDaten(self):
-        """Getter ecxel_daten"""
-        return self._excelDaten
 
-    @excelDaten.setter
-    def excelDaten(self, daten):
-        """Setter ecxel_daten"""
-        self._excelDaten = daten
+class Regeln(ObserverSubject):
+    """Klasse, die die Regeln speichert"""
+
+    def __init__(self, excelDaten):
+        super().__init__()
+        self.regeln = []
+        self.aktiveRegel = None
+        self._excelDaten = excelDaten
+        self._excelDaten.registerObserver(self)
+
+    def update(self):
+        """Wird aufgerufen, wenn die ExcelDaten sich aendern"""
         self.updateRegel()
+        self.notifyObserver()
 
     def updateRegel(self, index=None):
         """Berechnet fuer die Regel die Anzahl der Pakete, die die Regel
@@ -304,7 +316,7 @@ class Regeln:
         :returns: Pandas Dataframe
         """
 
-        datenListe = [regel.get_erfuellt() for regel in self.regeln]
+        datenListe = [regel.getErfuellt() for regel in self.regeln]
         datenListe = [l.drop_duplicates(subset='FallDatum') for l in datenListe]
         return pd.concat(datenListe)
 
@@ -354,10 +366,11 @@ class Regeln:
         self.notifyObserver()
 
 
-class ExcelDaten(object):
+class ExcelDaten(ObserverSubject):
     """Objekt, das die Excel Daten enthaelt"""
 
     def __init__(self):
+        super().__init__()
         self._dataframe = None
         self._kategorien = set()
         self._leistungen = None
@@ -372,6 +385,7 @@ class ExcelDaten(object):
         """Setter dataframe"""
         self._dataframe = daten
         self.calcUniqueLeistungen()
+        self.notifyObserver()
 
     def addKategorie(self, kategorie):
         """Fuegt eine Kategorie hinzu"""
@@ -414,6 +428,12 @@ class ExcelDaten(object):
         if self._dataframe is None:
             return False
         return label in self._leistungen.values
+
+    def getKategorien(self):
+        """Gibt die Kategorien als Liste zurueck
+        :returns: Kategorien
+        """
+        return list(self._kategorien)
 
 
 
@@ -906,7 +926,7 @@ class TarmedpaketGUI(wx.Frame):
         self._currentWorker = None
 
         self.daten = ExcelDaten()
-        self.regeln = Regeln()
+        self.regeln = Regeln(self.daten)
 
         self.initUI()
         self.setupEvents()
@@ -920,43 +940,64 @@ class TarmedpaketGUI(wx.Frame):
         self.Bind(wx.EVT_MENU, self.onSaveExcel, self.fileMenuExportExcel)
         self.Bind(wx.EVT_MENU, self.onSaveRegelExcel, self.fileMenuExportRegelExcel)
         self.Bind(wx.EVT_BUTTON, self.openExcel, self.excelOpenButton)
-        self.Bind(EVT_FINISH_EXCEL_READ, self.onFinishExcelRead)
+
+        pub.subscribe(self.finishWrite, 'excel.write')
+        pub.subscribe(self.onFinishExcelCalc, 'excel.read')
+
+    def finishWrite(self, success, msg=None):
+        """Funktion, die nach dem Schreiben eines Excels aufgerufen wird
+
+        :success: Bool ob erfolgreich
+        :errMsg: Fehlermeldung
+        """
+        self._currentWorker = None
+        self.SetCursor(wx.Cursor(wx.CURSOR_ARROW))
+        self.Enable()
 
     def onSaveRegelExcel(self,event):
         saveFileDialog = wx.FileDialog(
-                self,
-                "Speichern unter", "", "", 
-                "Excel files (*.xlsx; *.xls)|*.xlsx;*.xls", 
-                wx.FD_SAVE,
-               )
+            self,
+            "Speichern unter", 
+            "", 
+            "", 
+            "Excel files (*.xlsx; *.xls)|*.xlsx;*.xls", 
+            wx.FD_SAVE,
+        )
         saveFileDialog.ShowModal()
         filePath = pathlib.Path(saveFileDialog.GetPath())
         saveFileDialog.Destroy()
         dataframe = self.regeln.getBedingungsliste()
+        print(dataframe)
 
         self._currentWorker = ExcelDataFrameWriter(self, filePath, dataframe)
 
-    def onFinishExcelCalc(self, event):
-        if event.success:
-            self.daten.dataframe = event.data[0]
-            kategorien = event.data[1]
+    def onFinishExcelCalc(self, data, success, errMsg=None):
+        """ Funktion, die nach dem Lesen eines Excels aufgerufen wird
+
+        :data: Tuple mit Dataframe und Kategorienliste
+        :success: Bool ob erfolgreich
+        :errMsg: Fehlermeldung:
+        """
+        if success:
+            self.daten.dataframe = data[0]
+            kategorien = data[1]
             if kategorien is not None:
-                for kategorie in event.data[1]:
+                for kategorie in kategorien:
                     self.daten.addKategorie(kategorie)
             # TODO
             # self.summaryPanel.updateTotal( self.regeln.get_anzahl_falldaten() )
             # self.daten.updateSummaryPanel()
         else:
-            if event.errMsg:
+            if errMsg:
                 wx.MessageBox(
-                    message=event.errMsg,
+                    message=errMsg,
                     caption='Fehler',
                     style=wx.OK | wx.ICON_INFORMATION,
                 )
 
         self._currentWorker = None
-        self.Enable()
         self.SetCursor(wx.Cursor(wx.CURSOR_ARROW))
+        self.Enable()
 
     def onExitApp(self, event):
         self.Destroy()
@@ -982,10 +1023,20 @@ class TarmedpaketGUI(wx.Frame):
            )
         saveFileDialog.ShowModal()
         filePath = pathlib.Path(saveFileDialog.GetPath())
-        if not self.regeln.writeDatenToExcel(filePath):
-            wx.MessageBox('Noch keine Daten vorhanden', 'Info',
-                    wx.OK | wx.ICON_INFORMATION,
-                    )
+
+        result = ExcelPaketWriter(
+            self,
+            filePath,
+            self.daten.dataframe,
+            self.daten.getKategorien(),
+        )
+
+        if not result:
+            wx.MessageBox(
+                'Noch keine Daten vorhanden',
+                'Info',
+                wx.OK | wx.ICON_INFORMATION,
+            )
         saveFileDialog.Destroy()
 
 
