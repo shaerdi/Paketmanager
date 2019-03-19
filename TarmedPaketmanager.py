@@ -1,4 +1,5 @@
-from collections import OrderedDict
+"""GUI Modul des TarmedPaketmanagers"""
+
 import pickle
 import pathlib
 import threading
@@ -84,53 +85,73 @@ class ResultEvent(wx.PyEvent):
         self.errMsg = errMsg
 
 
-class Regel:
+class Regel(object):
     """Stellt eine Regel dar, die ein Paket erfuellen kann oder nicht"""
 
     UND = 0
     ODER = 1
     NICHT = 2
 
-    def __init__(self, name, daten):
+    def __init__(self, name, daten, notifyFunc):
         self.name = name
-        self._bedingung_und = []
-        self._bedingung_oder = []
-        self._bedingung_nicht = []
+        self._bedingungUnd = []
+        self._bedingungOder = []
+        self._bedingungNicht = []
         self.anzahl = '-'
         self._daten = daten
         self._erfuellt = None
+        self._notifyFunc = notifyFunc
 
-    def add_leistung(self, new_item, bedingungs_art):
+    def addLeistung(self, newItem, typ):
         """Fuegt eine neue Leistung zur einer Liste hinzu
 
         :new_item: Neue Leistung
         :bedingungs_art: Regel.UND, ODER oder NICHT
         """
 
-        if bedingungs_art == Regel.UND:
-            self._bedingung_und.append(new_item)
-        elif bedingungs_art == Regel.ODER:
-            self._bedingung_oder.append(new_item)
-        elif bedingungs_art == Regel.NICHT:
-            self._bedingung_nicht.append(new_item)
+        if typ == Regel.UND:
+            self._bedingungUnd.append(newItem)
+        elif typ == Regel.ODER:
+            self._bedingungOder.append(newItem)
+        elif typ == Regel.NICHT:
+            self._bedingungNicht.append(newItem)
         else:
             raise RuntimeError("Unbekannte Bedingung")
+        self._notifyFunc()
 
-    def remove_leistung(self, index, bedingungs_art):
+    def removeLeistung(self, index, typ):
         """Loescht eine Leistung aus einer Liste
 
         :index: Index der zu loeschenden Leistung
         :bedingungs_art: Regel.UND, ODER oder NICHT
         """
 
-        if bedingungs_art == Regel.UND:
-            del self._bedingung_und[index]
-        elif bedingungs_art == Regel.ODER:
-            del self._bedingung_oder[index]
-        elif bedingungs_art == Regel.NICHT:
-            del self._bedingung_nicht[index]
+        if typ == Regel.UND:
+            del self._bedingungUnd[index]
+        elif typ == Regel.ODER:
+            del self._bedingungOder[index]
+        elif typ == Regel.NICHT:
+            del self._bedingungNicht[index]
         else:
             raise RuntimeError("Unbekannte Bedingung")
+        self._notifyFunc()
+
+    def clearItems(self, typ):
+        """Loescht die Leistungen aus einer Liste
+
+        :index: Index der zu loeschenden Leistung
+        :bedingungs_art: Regel.UND, ODER oder NICHT
+        """
+
+        if typ == Regel.UND:
+            self._bedingungUnd = []
+        elif typ == Regel.ODER:
+            self._bedingungOder = []
+        elif typ == Regel.NICHT:
+            self._bedingungNicht = []
+        else:
+            raise RuntimeError("Unbekannte Bedingung")
+        self._notifyFunc()
 
     def update(self):
         """Berechnet die Pakete, die diese Regel erfuellen"""
@@ -141,17 +162,17 @@ class Regel:
 
         def erfuellt(key):
             """Checkt, ob ein Key diese Regel erfuellt"""
-            erfuelltalle = all([(k in key) for k in self._bedingung_und])
-            erfuelltoder = len(self._bedingung_oder) == 0 or \
-                           any([(k in key) for k in self._bedingung_oder])
-            erfuelltnot = all([(k not in key) for k in self._bedingung_nicht])
+            erfuelltalle = all([(k in key) for k in self._bedingungUnd])
+            erfuelltoder = len(self._bedingungOder) == 0 or \
+                           any([(k in key) for k in self._bedingungOder])
+            erfuelltnot = all([(k not in key) for k in self._bedingungNicht])
             return  erfuelltalle and erfuelltoder and erfuelltnot
 
         ind = self._daten.key.apply(erfuellt)
         self._erfuellt = self._daten[ind]
         self.anzahl = str(ind.sum)
 
-    def get_erfuellt(self):
+    def getErfuellt(self):
         """Gibt ein Dataframe zurueck, das alle Falldaten enthaelt, die diese
         Regel erfuellen.
 
@@ -166,25 +187,25 @@ class Regel:
         :returns: Liste mit Leistungen
         """
         if typ == Regel.UND:
-            return self._bedingung_und
+            return self._bedingungUnd
         elif typ == Regel.ODER:
-            return self._bedingung_oder
+            return self._bedingungOder
         elif typ == Regel.NICHT:
-            return self._bedingung_nicht
+            return self._bedingungNicht
         else:
             raise RuntimeError("Unbekannte Bedingung")
 
 
-class Regeln:
+class Regeln(object):
     """Klasse, die die Regeln speichert"""
 
     def __init__(self):
         self.observers = []
         self.regeln = []
         self.aktiveRegel = None
-        self._excel_daten = None
+        self._excelDaten = None
 
-    def register_observer(self, observer):
+    def registerObserver(self, observer):
         """Registriert ein Observerobjekt, das per Aufrufen der Funktion update
         auf Aenderungen aufmerksam gemacht wird.
 
@@ -194,7 +215,7 @@ class Regeln:
         observer.regeln = self
         self.observers.append(observer)
 
-    def notify_observers(self):
+    def notifyObserver(self):
         """Ruft die Methode update fuer alle Observer auf
 
         """
@@ -202,17 +223,17 @@ class Regeln:
             observer.update()
 
     @property
-    def excel_daten(self):
+    def excelDaten(self):
         """Getter ecxel_daten"""
-        return self._excel_daten
+        return self._excelDaten
 
-    @excel_daten.setter
-    def excel_daten(self, daten):
+    @excelDaten.setter
+    def excelDaten(self, daten):
         """Setter ecxel_daten"""
-        self._excel_daten = daten
-        self.update_regel()
+        self._excelDaten = daten
+        self.updateRegel()
 
-    def update_regel(self, index=None):
+    def updateRegel(self, index=None):
         """Berechnet fuer die Regel die Anzahl der Pakete, die die Regel
         erfuellen.
 
@@ -229,39 +250,38 @@ class Regeln:
 
         :name: Name der neuen Regel
         """
-        neue_regel = Regel(name, self._excel_daten)
-        self.regeln.append(neue_regel)
-        self.notify_observers()
+        neueRegel = Regel(name, self._excelDaten, self.notifyObserver)
+        self.regeln.append(neueRegel)
+        self.notifyObserver()
 
-    def rename_regel(self, index, neuer_name):
+    def renameRegel(self, index, neuerName):
         """Benennt eine Regel um.
 
         :index: Index der Regel, die umbenannt wird
         :neuer_name: Neuer Name
         """
-        self.regeln[index].name = neuer_name
-        self.notify_observers()
+        self.regeln[index].name = neuerName
+        self.notifyObserver()
 
-    def remove_regel(self, index):
+    def removeRegel(self, index):
         """Loescht eine Regel.
 
         :index: Index, der geloscht wird.
         """
         del self.regeln[index]
-        self.notify_observers()
+        self.notifyObserver()
 
-    def get_bedingungsliste(self, filename):
-        """Speichert ein Excel, in dem fuer jedes Falldatum eine Zeile fuer
-        jede Regel steht, die dieses Falldatum erfuellt
+    def getBedingungsliste(self):
+        """Gibt eine Liste von Falldaten zurueck, die Bedingungen erfuellen
 
-        :filename: Pfad zur Datei
+        :returns: Pandas Dataframe
         """
 
         datenListe = [regel.get_erfuellt() for regel in self.regeln]
         datenListe = [l.drop_duplicates(subset='FallDatum') for l in datenListe]
         return pd.concat(datenListe)
 
-    def save_to_file(self,filename):
+    def saveToFile(self, filename):
         """Speichert die enthaltenen Regeln in ein File
 
         :filename: Filename
@@ -270,7 +290,7 @@ class Regeln:
         with path.with_suffix('.tpf').open('wb') as f:
             pickle.dump(self.regeln, f)
 
-    def loadFromFile(self,filename):
+    def loadFromFile(self, filename):
         """Laedt die Regeln aus einem File
 
         :filename: Filename
@@ -278,7 +298,7 @@ class Regeln:
         path = pathlib.Path(filename)
         with path.with_suffix('.tpf').open('rb') as f:
             self.regeln = pickle.load(f)
-        self.update_regel()
+        self.updateRegel()
 
     def setAktiv(self, index):
         """Setzt die momentan aktive Regel
@@ -289,7 +309,7 @@ class Regeln:
             self.aktiveRegel = self.regeln[index]
 
 
-class ExcelDaten:
+class ExcelDaten(object):
     """Objekt, das die Excel Daten enthaelt"""
 
     def __init__(self):
@@ -319,7 +339,7 @@ class ExcelDaten:
             ]['Leistung']
         self._leistungen = leistungen.drop_duplicates()
 
-    def getLeistungen(self, filter_=None):
+    def getLeistungen(self, filterLeistung=None):
         """Gibt die Unique Leistungen zurueck
 
         :returns: Die Leistungen
@@ -327,9 +347,8 @@ class ExcelDaten:
         """
         if self._leistungen is None:
             return []
-        else:
-            ind = self._leistungen.str.contains(filter)
-            return self._leistungen[ind].values
+        ind = self._leistungen.str.contains(filterLeistung)
+        return self._leistungen[ind].values
 
     def getAnzahlFalldaten(self):
         """Gibt die Anzahl Falldaten zurueck
@@ -339,8 +358,7 @@ class ExcelDaten:
 
         if self._dataframe is not None:
             return self.dataframe.FallDatum.drop_duplicates().shape[0]
-        else:
-            return 0
+        return 0
 
     def checkItem(self, label):
         """Prueft, ob eine Bedingung in den Daten vorhanden ist
@@ -350,8 +368,7 @@ class ExcelDaten:
         """
         if self._dataframe is None:
             return False
-        else:
-            return label in self._leistungen
+        return label in self._leistungen
 
 
 
@@ -589,13 +606,6 @@ class AnzeigeListe(wx.ListCtrl, wx.lib.mixins.listctrl.ListCtrlAutoWidthMixin):
         wx.lib.mixins.listctrl.ListCtrlAutoWidthMixin.__init__(self)
 
         self.InsertColumn(0, '')
-        # self.Bind(wx.EVT_KEY_DOWN, lambda e:wx.PostEvent(self._parent,e))
-
-    # def OnItemSelected(self, event):
-        # self.currentItem = event.m_itemIndex
-
-    # def OnItemActivated(self, event):
-        # self.currentItem = event.m_itemIndex
 
     def OnGetItemText(self, item, col):
         return self.items[item]
@@ -608,7 +618,7 @@ class RegelListe(AnzeigeListe):
         self.Bind(wx.EVT_LIST_ITEM_ACTIVATED, self.OnDoubleClick)
         self.Bind(wx.EVT_LIST_END_LABEL_EDIT, self.LabelEdit)
         self.Bind(wx.EVT_LIST_ITEM_SELECTED, self.onSetFocus)
-        regeln.register_observer(self)
+        regeln.registerObserver(self)
         self.update()
 
     def onSetFocus(self, event):
@@ -646,7 +656,7 @@ class BedingungsListe(AnzeigeListe):
         self.redItem = wx.ListItemAttr()
         self.redItem.SetBackgroundColour(wx.Colour(255,204,204))
 
-        regeln.register_observer(self)
+        regeln.registerObserver(self)
         self.update()
         self._typ = None
 
@@ -690,11 +700,11 @@ class BedingungsListe(AnzeigeListe):
         aktiveRegel = self.regeln.aktiveRegel
         if aktiveRegel is not None:
             for item in itemsToDelete:
-                aktiveRegel.remove_leistung(index, self._typ)
-            self.regeln.notify_observers()
+                aktiveRegel.removeLeistung(index, self._typ)
 
 
 class ListePanel(wx.Panel):
+    """Abstrakte Basisklasse fuer ein Panel mit einer Liste"""
     def __init__(self, *args, **kwargs):
 
         titel = kwargs.pop('titel', '')
@@ -703,24 +713,27 @@ class ListePanel(wx.Panel):
 
         super(ListePanel, self).__init__(*args, **kwargs)
 
-        self.InitUI(titel)
-        self.SetupEvents()
+        self.initUI(titel)
+        self.setupEvents()
 
-    def SetupEvents(self):
+    def setupEvents(self):
+        """Funktion, die alle wx Events bindet"""
         raise NotImplementedError()
 
     def getCtrlList(self):
+        """Funktion, die eine Instanz der ListCtrl Klasse zurueckgibt"""
         raise NotImplementedError()
 
-    def InitUI(self,titel):
-        sizer = wx.GridBagSizer(5,5)
+    def initUI(self, titel):
+        """Setup des UI"""
+        sizer = wx.GridBagSizer(5, 5)
 
         txt = wx.StaticText(self, label=titel, style=wx.ALIGN_CENTRE_HORIZONTAL)
         txt.SetToolTip(wx.ToolTip(TOOLTIPS[titel.lower()]))
-        sizer.Add( txt, pos=(0,0), span=(1,4), flag=wx.EXPAND,border=15)
+        sizer.Add(txt, pos=(0,0), span=(1,4), flag=wx.EXPAND, border=15)
 
         self.listbox = self.getCtrlList()
-        sizer.Add( self.listbox, pos=(1,0), span=(1,4), flag=wx.EXPAND|wx.BOTTOM,border=15)
+        sizer.Add(self.listbox, pos=(1,0), span=(1,4), flag=wx.EXPAND|wx.BOTTOM, border=15)
 
         def create_button(symbol):
             btn = wx.Button(self, label=symbol, size=(50,30))
@@ -732,9 +745,9 @@ class ListePanel(wx.Panel):
         self.delBtn = create_button('-')
         self.clrBtn = create_button('X')
 
-        sizer.Add( self.newBtn, pos=(2,0))
-        sizer.Add( self.delBtn, pos=(2,1))
-        sizer.Add( self.clrBtn, pos=(2,3))
+        sizer.Add(self.newBtn, pos=(2,0))
+        sizer.Add(self.delBtn, pos=(2,1))
+        sizer.Add(self.clrBtn, pos=(2,3))
 
         sizer.AddGrowableRow(1)
         sizer.AddGrowableCol(2)
@@ -757,19 +770,19 @@ class RegelPanel(ListePanel):
     def getCtrlList(self):
         return RegelListe(self, self.regeln, self.daten, size=(70,-1))
 
-    def SetupEvents(self):
-        self.Bind(wx.EVT_BUTTON, self.NewItem, id=self.newBtn.GetId())
-        self.Bind(wx.EVT_BUTTON, self.DelItem, id=self.delBtn.GetId())
-        self.Bind(wx.EVT_BUTTON, self.ClrItem, id=self.clrBtn.GetId())
+    def setupEvents(self):
+        self.Bind(wx.EVT_BUTTON, self.newItem, id=self.newBtn.GetId())
+        self.Bind(wx.EVT_BUTTON, self.delItem, id=self.delBtn.GetId())
+        self.Bind(wx.EVT_BUTTON, self.clrItem, id=self.clrBtn.GetId())
 
-    def NewItem(self, event):
+    def newItem(self, event):
         text = wx.GetTextFromUser('Enter a new item', 'Insert dialog')
         if text != '':
             self.regeln.addRegel(text)
-            self.listbox.Select( len(self.regeln.regeln) -1 )
-            self.listbox.Focus( len(self.regeln.regeln) -1 )
+            self.listbox.Select(len(self.regeln.regeln)-1)
+            self.listbox.Focus(len(self.regeln.regeln)-1)
 
-    def DelItem(self, event):
+    def delItem(self, event):
         index = self.listbox.GetFirstSelected()
         if index >= 0:
             item = self.listbox.GetItem(index).GetText()
@@ -777,7 +790,7 @@ class RegelPanel(ListePanel):
             self.daten.updateListen()
             self.setFocus(index)
 
-    def ClrItem(self, event):
+    def clrItem(self, event):
         self.daten.clearRegeln()
         self.updateAktiv()
 
@@ -798,13 +811,13 @@ class BedingungsPanel(ListePanel):
         liste.setType(self.typ)
         return liste
 
-    def SetupEvents(self):
-        self.Bind(wx.EVT_BUTTON, self.NewItem, id=self.newBtn.GetId())
-        self.Bind(wx.EVT_BUTTON, self.DelItem, id=self.delBtn.GetId())
-        self.Bind(wx.EVT_BUTTON, self.ClrItem, id=self.clrBtn.GetId())
-        self.Bind(wx.EVT_KEY_DOWN, self.OnKeyPress)
+    def setupEvents(self):
+        self.Bind(wx.EVT_BUTTON, self.newItem, id=self.newBtn.GetId())
+        self.Bind(wx.EVT_BUTTON, self.delItem, id=self.delBtn.GetId())
+        self.Bind(wx.EVT_BUTTON, self.clrItem, id=self.clrBtn.GetId())
+        self.Bind(wx.EVT_KEY_DOWN, self.onKeyPress)
 
-    def OnKeyPress(self, event):
+    def onKeyPress(self, event):
         keycode = event.GetKeyCode()
 
         index = self.listbox.GetFocusedItem()
@@ -818,26 +831,26 @@ class BedingungsPanel(ListePanel):
         elif keycode == wx.WXK_DELETE or keycode == wx.WXK_NUMPAD_DELETE:
             self.DelItem(event)
 
-    def NewItem(self, event):
+    def newItem(self, event):
         with BedingungswahlDialog(self, wx.ID_ANY, "Neue Bedingung", self.daten) as dlg:
             if dlg.ShowModal() == wx.ID_OK:
                 text = dlg.GetValue()
                 aktiveRegel = self.regeln.aktiveRegel
                 if text != '' and aktiveRegel is not None:
-                    aktiveRegel.add_leistung(text, self.typ)
-                    self.regeln.notify_observers()
+                    aktiveRegel.addLeistung(text, self.typ)
 
-    def DelItem(self, event):
+    def delItem(self, event):
         self.listbox.deleteSelected()
 
-    def ClrItem(self, event):
-        self.regeln.clearItems(self.titel)
-        self.regeln.updateListen()
+    def clrItem(self, event):
+        aktiveRegel = self.regeln.aktiveRegel
+        if aktiveRegel is not None:
+            aktiveRegel.clearItems(self.typ)
 
 
 class TarmedpaketGUI(wx.Frame):
     name = "Tarmed Pakete"
-    windowSize = (1300,800)
+    windowSize = (1300, 800)
 
     panels = {}
 
@@ -850,22 +863,22 @@ class TarmedpaketGUI(wx.Frame):
         self.daten = ExcelDaten()
         self.regeln = Regeln()
 
-        self.InitUI()
-        self.SetupEvents()
+        self.initUI()
+        self.setupEvents()
         self.Centre()
 
-    def SetupEvents(self):
-        self.Bind(wx.EVT_CLOSE, self.OnCloseFrame)
-        self.Bind(wx.EVT_MENU, self.OnCloseFrame, self.fileMenuExitItem)
-        self.Bind(wx.EVT_MENU, self.OnSaveRule, self.fileMenuSaveRule)
-        self.Bind(wx.EVT_MENU, self.OnLoadRule, self.fileMenuLoadRule)
-        self.Bind(wx.EVT_MENU, self.OnSaveExcel, self.fileMenuExportExcel)
-        self.Bind(wx.EVT_MENU, self.OnSaveRegelExcel, self.fileMenuExportRegelExcel)
-        self.Bind(wx.EVT_BUTTON, self.OpenExcel, self.excelOpenButton)
+    def setupEvents(self):
+        self.Bind(wx.EVT_CLOSE, self.onCloseFrame)
+        self.Bind(wx.EVT_MENU, self.onCloseFrame, self.fileMenuExitItem)
+        self.Bind(wx.EVT_MENU, self.onSaveRule, self.fileMenuSaveRule)
+        self.Bind(wx.EVT_MENU, self.onLoadRule, self.fileMenuLoadRule)
+        self.Bind(wx.EVT_MENU, self.onSaveExcel, self.fileMenuExportExcel)
+        self.Bind(wx.EVT_MENU, self.onSaveRegelExcel, self.fileMenuExportRegelExcel)
+        self.Bind(wx.EVT_BUTTON, self.openExcel, self.excelOpenButton)
 
-        EVT_RESULT(self, self.FinishExcelCalc)
+        EVT_RESULT(self, self.finishExcelCalc)
 
-    def OnSaveRegelExcel(self,event):
+    def onSaveRegelExcel(self,event):
         saveFileDialog = wx.FileDialog(
                 self,
                 "Speichern unter", "", "", 
@@ -878,9 +891,9 @@ class TarmedpaketGUI(wx.Frame):
         # TODO:
         # self.regeln.save_to_file(filePath)
 
-    def FinishExcelCalc(self, event):
+    def finishExcelCalc(self, event):
         if event.success:
-            self.regeln.excel_daten = event.data[0]
+            self.regeln.excelDaten = event.data[0]
             # TODO
             # self.daten.kategorien = event.data[1]
             # self.summaryPanel.updateTotal( self.regeln.get_anzahl_falldaten() )
@@ -892,17 +905,17 @@ class TarmedpaketGUI(wx.Frame):
                     caption='Fehler',
                     style=wx.OK | wx.ICON_INFORMATION,
                    )
-            self.regeln.excel_daten = None
+            self.regeln.excelDaten = None
             # self.daten.kategorien = None,None
 
         self.excelWorker = None
         self.Enable()
         self.SetCursor(wx.Cursor(wx.CURSOR_ARROW))
 
-    def OnExitApp(self, event):
+    def onExitApp(self, event):
         self.Destroy()
 
-    def OnSaveRule(self, event):
+    def onSaveRule(self, event):
         saveFileDialog = wx.FileDialog(
             self, 
             "Speichern unter", "", "", 
@@ -912,9 +925,9 @@ class TarmedpaketGUI(wx.Frame):
         saveFileDialog.ShowModal()
         file_path = pathlib.Path(saveFileDialog.GetPath())
         saveFileDialog.Destroy()
-        self.regeln.save_to_file(file_path)
+        self.regeln.saveToFile(file_path)
 
-    def OnSaveExcel(self, event):
+    def onSaveExcel(self, event):
         saveFileDialog = wx.FileDialog(
             self, 
             "Speichern unter", "", "",
@@ -930,7 +943,7 @@ class TarmedpaketGUI(wx.Frame):
         saveFileDialog.Destroy()
 
 
-    def OnLoadRule(self, event):
+    def onLoadRule(self, event):
         openFileDialog = wx.FileDialog(self, "Öffnen", "", "", 
                                       "TarmedPaketGUI files (*.tpf)|*.tpf", 
                                        wx.FD_OPEN | wx.FD_FILE_MUST_EXIST,
@@ -940,53 +953,61 @@ class TarmedpaketGUI(wx.Frame):
         openFileDialog.Destroy()
         self.regeln.loadFromFile(filePath)
 
-    def OnCloseFrame(self, event):
+    def onCloseFrame(self, event):
         dialog = wx.MessageDialog(self, message="Programm wirklich Schliessen?", caption="", style=wx.YES_NO, pos=wx.DefaultPosition)
         response = dialog.ShowModal()
 
         if response == wx.ID_YES:
-            self.OnExitApp(event)
+            self.onExitApp(event)
         else:
             event.StopPropagation()
 
-    def InitMenuBar(self):
+    def initMenuBar(self):
         menubar = wx.MenuBar()
 
         fileMenu = wx.Menu()
-        self.fileMenuExportExcel = wx.MenuItem(fileMenu, wx.ID_ANY,
-                text = "Export Excel",
-                )
+        self.fileMenuExportExcel = wx.MenuItem(
+            fileMenu,
+            wx.ID_ANY,
+            text="Export Excel",
+        )
         fileMenu.Append(self.fileMenuExportExcel)
 
-        self.fileMenuExportRegelExcel = wx.MenuItem(fileMenu, wx.ID_ANY,
-                text = "Export Bedingungen in Excel",
-                )
+        self.fileMenuExportRegelExcel = wx.MenuItem(
+            fileMenu,
+            wx.ID_ANY,
+            text="Export Bedingungen in Excel",
+        )
         fileMenu.Append(self.fileMenuExportRegelExcel)
 
         fileMenu.AppendSeparator()
 
-        self.fileMenuSaveRule = wx.MenuItem(fileMenu, wx.ID_SAVE,
-                text = "Regeln speichern",
-                )
-        self.fileMenuLoadRule = wx.MenuItem(fileMenu, wx.ID_OPEN,
-                text = "Regeln laden",
-                )
+        self.fileMenuSaveRule = wx.MenuItem(
+            fileMenu,
+            wx.ID_SAVE,
+            text="Regeln speichern",
+        )
+        self.fileMenuLoadRule = wx.MenuItem(
+            fileMenu,
+            wx.ID_OPEN,
+            text="Regeln laden",
+        )
 
         fileMenu.Append(self.fileMenuSaveRule)
         fileMenu.Append(self.fileMenuLoadRule)
 
         fileMenu.AppendSeparator()
 
-        self.fileMenuExitItem = wx.MenuItem(fileMenu, wx.ID_EXIT, '&Quit\tCtrl+Q') 
+        self.fileMenuExitItem = wx.MenuItem(fileMenu, wx.ID_EXIT, '&Quit\tCtrl+Q')
         fileMenu.Append(self.fileMenuExitItem)
-        
+
         menubar.Append(fileMenu, '&Datei')
         self.SetMenuBar(menubar)
 
 
 
-    def InitUI(self):
-        self.InitMenuBar()
+    def initUI(self):
+        self.initMenuBar()
 
         panel = wx.Panel(self)
         self.panel = panel
@@ -995,7 +1016,7 @@ class TarmedpaketGUI(wx.Frame):
 
         hBox1 = wx.BoxSizer(wx.HORIZONTAL)
         text = wx.StaticText(panel, label='Aktuelles Excel')
-        hBox1.Add(text, flag=wx.RIGHT|wx.TOP,border=5)
+        hBox1.Add(text, flag=wx.RIGHT|wx.TOP, border=5)
 
         self.excelPath = wx.TextCtrl(panel)
         hBox1.Add(self.excelPath, proportion=1, flag=wx.LEFT, border=10)
@@ -1003,7 +1024,7 @@ class TarmedpaketGUI(wx.Frame):
         self.excelOpenButton = wx.Button(panel, label='Öffnen')
         hBox1.Add(self.excelOpenButton, flag=wx.LEFT|wx.RIGHT, border=15)
 
-        mainBox.Add(hBox1,flag=wx.TOP|wx.LEFT|wx.RIGHT|wx.EXPAND, border=15)
+        mainBox.Add(hBox1, flag=wx.TOP|wx.LEFT|wx.RIGHT|wx.EXPAND, border=15)
 
         # -----------------------------------
         line = wx.StaticLine(panel)
@@ -1011,37 +1032,43 @@ class TarmedpaketGUI(wx.Frame):
 
         hBox2 = wx.BoxSizer(wx.HORIZONTAL)
 
-        ruleBox = wx.StaticBox(panel, label= "Regeln")
+        ruleBox = wx.StaticBox(panel, label="Regeln")
         ruleBoxSizer = wx.StaticBoxSizer(ruleBox, wx.HORIZONTAL)
-        
-        pl = RegelPanel(panel, titel='Regel', regeln=self.regeln, daten=self.daten)
-        pl1 = BedingungsPanel(panel, titel='AND', regeln=self.regeln, daten=self.daten)
-        pl2 = BedingungsPanel(panel, titel='OR', regeln=self.regeln, daten=self.daten)
-        pl3 = BedingungsPanel(panel, titel='NOT', regeln=self.regeln, daten=self.daten)
 
-        pl1.listbox.setType(Regel.UND)
-        pl2.listbox.setType(Regel.ODER)
-        pl3.listbox.setType(Regel.NICHT)
+        regelPanel = RegelPanel(panel, titel='Regel', regeln=self.regeln, daten=self.daten)
+        bPanel1 = BedingungsPanel(panel, titel='AND', regeln=self.regeln, daten=self.daten)
+        bPanel2 = BedingungsPanel(panel, titel='OR', regeln=self.regeln, daten=self.daten)
+        bPanel3 = BedingungsPanel(panel, titel='NOT', regeln=self.regeln, daten=self.daten)
 
-        ruleBoxSizer.Add(pl, proportion=1,flag=wx.EXPAND|wx.ALL, border=15)
-        ruleBoxSizer.Add(pl1, proportion=1,flag=wx.EXPAND|wx.ALL, border=15)
-        ruleBoxSizer.Add(pl2, proportion=1,flag=wx.EXPAND|wx.ALL, border=15)
-        ruleBoxSizer.Add(pl3, proportion=1,flag=wx.EXPAND|wx.ALL, border=15)
+        bPanel1.listbox.setType(Regel.UND)
+        bPanel2.listbox.setType(Regel.ODER)
+        bPanel3.listbox.setType(Regel.NICHT)
 
-        hBox2.Add(ruleBoxSizer, proportion = 2, flag=wx.EXPAND|wx.ALL, border=15)
+        ruleBoxSizer.Add(regelPanel, proportion=1, flag=wx.EXPAND|wx.ALL, border=15)
+        ruleBoxSizer.Add(bPanel1, proportion=1, flag=wx.EXPAND|wx.ALL, border=15)
+        ruleBoxSizer.Add(bPanel2, proportion=1, flag=wx.EXPAND|wx.ALL, border=15)
+        ruleBoxSizer.Add(bPanel3, proportion=1, flag=wx.EXPAND|wx.ALL, border=15)
+
+        hBox2.Add(ruleBoxSizer, proportion=2, flag=wx.EXPAND|wx.ALL, border=15)
 
         # self.summaryPanel = SummaryPanel(panel)
         # self.daten.summaryPanel = self.summaryPanel
         # hBox2.Add(self.summaryPanel, proportion = 1, flag=wx.EXPAND|wx.ALL, border=15)
 
-        mainBox.Add(hBox2, proportion=1,flag=wx.LEFT|wx.RIGHT|wx.EXPAND, border=15)
+        mainBox.Add(hBox2, proportion=1, flag=wx.LEFT|wx.RIGHT|wx.EXPAND, border=15)
 
         panel.SetSizer(mainBox)
-        
-    def OpenExcel(self,e):
-        openFileDialog = wx.FileDialog(self, "Wählen", "", "Excel files (*.xlsx;*.xls)|*.xlsx;*.xls", "",
-                                        wx.FD_OPEN | wx.FD_FILE_MUST_EXIST
-                                       )
+
+    def openExcel(self, event):
+        """Oeffnet ein Excel mit Falldaten"""
+        openFileDialog = wx.FileDialog(
+            self,
+            "Wählen",
+            "",
+            "Excel files (*.xlsx;*.xls)|*.xlsx;*.xls",
+            "",
+            wx.FD_OPEN | wx.FD_FILE_MUST_EXIST,
+        )
         if not openFileDialog.ShowModal() == wx.ID_OK:
             return
         filePath = openFileDialog.GetPath()
@@ -1053,13 +1080,13 @@ class TarmedpaketGUI(wx.Frame):
         self.excelWorker = ExcelReader(self, filePath)
 
     def menuhandler(self, event):
-          id_ = event.GetId() 
-          if id_ == wx.ID_EXIT: 
-             self.Close()
+        id_ = event.GetId()
+        if id_ == wx.ID_EXIT:
+            self.Close()
 
 
 def main():
-
+    """Main GUI Loop"""
     app = wx.App()
     ex = TarmedpaketGUI(None)
     ex.Show()
