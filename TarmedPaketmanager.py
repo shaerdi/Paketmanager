@@ -223,12 +223,14 @@ class Regel:
 
 LIST_TOOLTIPS = {
     'regel' : 'Definierte Regeln',
+    'Kategorien' : 'Kategorien, in die die Pakete eingeordnet werden',
     Regel.UND : 'Alle Leistungen müssen im Paket vorkommen',
     Regel.ODER: 'Mindestens eine Leistung muss im Paket vorkommen',
     Regel.NICHT : 'Keine der Leistungen darf im Paket vorkommen',
 }
 LIST_HEADER = {
-    'regel' : 'Regelname',
+    'RegelListe' : 'Regelname',
+    'KategorieListe' : 'Leistung',
     Regel.UND : 'Und-Bedingung',
     Regel.ODER: 'Oder-Bedingung',
     Regel.NICHT : 'Nicht-Bedingung',
@@ -599,6 +601,7 @@ class BedingungsListe(AnzeigeListe):
     def __init__(self, parent, regeln, daten, *args, **kw):
 
         self._typ = kw.pop('typ')
+        kw['titel'] = LIST_HEADER[self._typ]
 
         AnzeigeListe.__init__(self, parent, regeln, daten, *args, **kw)
 
@@ -608,16 +611,6 @@ class BedingungsListe(AnzeigeListe):
 
         regeln.registerObserver(self)
         self.update()
-
-    def setType(self, typ):
-        """Setzt den Typ der Liste
-
-        :typ: Regel.UND, Regel.ODER oder Regel.NICHT
-
-        """
-        self._typ = typ
-        self.ClearAll()
-        self.InsertColumn(0, )
 
     def update(self):
         """Setzt Listenitems neu
@@ -654,136 +647,6 @@ class BedingungsListe(AnzeigeListe):
                 aktiveRegel.removeLeistung(index, self._typ)
 
 
-class ListePanel(wx.Panel):
-    """Abstrakte Basisklasse fuer ein Panel mit einer Liste"""
-    def __init__(self, *args, **kwargs):
-
-        titel = kwargs.pop('titel', '')
-        self.regeln = kwargs.pop('regeln', {})
-        self.daten = kwargs.pop('daten', {})
-
-        super(ListePanel, self).__init__(*args, **kwargs)
-
-        self.initUI(titel)
-        self.setupEvents()
-
-    def setupEvents(self):
-        """Funktion, die alle wx Events bindet"""
-        raise NotImplementedError()
-
-    def getCtrlList(self, titel):
-        """Funktion, die eine Instanz der ListCtrl Klasse zurueckgibt"""
-        raise NotImplementedError()
-
-    def initUI(self, titel):
-        """Setup des UI"""
-        sizer = wx.GridBagSizer(5, 5)
-
-        self.listbox = self.getCtrlList(titel)
-        sizer.Add(self.listbox, pos=(0,0), span=(1,4), flag=wx.EXPAND|wx.BOTTOM, border=15)
-
-        def create_button(symbol):
-            btn = wx.Button(self, label=symbol, size=(30,30))
-            font = wx.Font(15, wx.DEFAULT, wx.NORMAL, wx.BOLD)
-            btn.SetFont(font)
-            return btn
-
-        self.newBtn = create_button('+')
-        self.delBtn = create_button('-')
-        self.clrBtn = create_button('X')
-
-        sizer.Add(self.newBtn, pos=(1,0))
-        sizer.Add(self.delBtn, pos=(1,1))
-        sizer.Add(self.clrBtn, pos=(1,3))
-
-        sizer.AddGrowableRow(0)
-        sizer.AddGrowableCol(2)
-
-        self.SetSizer(sizer)
-
-
-class RegelPanel(ListePanel):
-    def __init__(self, *args, **kwargs):
-        super(RegelPanel, self).__init__(*args, **kwargs)
-        self.setFocus()
-
-    def setFocus(self, index = 0):
-        listLen = len(self.listbox.items)
-        if listLen == 0: return
-        index = max(min( listLen-1, index), 0)
-        self.listbox.Select(index)
-        self.listbox.Focus(index)
-
-    def getCtrlList(self, titel):
-        return RegelListe(
-            self,
-            self.regeln,
-            self.daten,
-            size=(70, -1),
-            titel=titel
-        )
-
-    def setupEvents(self):
-        self.Bind(wx.EVT_BUTTON, self.newItem, id=self.newBtn.GetId())
-        self.Bind(wx.EVT_BUTTON, self.delItem, id=self.delBtn.GetId())
-        self.Bind(wx.EVT_BUTTON, self.clrItem, id=self.clrBtn.GetId())
-
-    def newItem(self, event):
-        text = wx.GetTextFromUser('Enter a new item', 'Insert dialog')
-        if text != '':
-            self.regeln.addRegel(text)
-            self.listbox.Select(len(self.regeln.regeln)-1)
-            self.listbox.Focus(len(self.regeln.regeln)-1)
-
-    def delItem(self, event):
-        index = self.listbox.GetFirstSelected()
-        if index >= 0:
-            item = self.listbox.GetItem(index).GetText()
-            self.daten.deleteRegel(item)
-            self.daten.updateListen()
-            self.setFocus(index)
-
-    def clrItem(self, event):
-        self.regeln.clearRegeln()
-
-
-class BedingungsPanel(ListePanel):
-    def __init__(self, *args, **kwargs):
-        self.typ = kwargs.pop('typ')
-
-        super().__init__(*args,**kwargs)
-
-    def getCtrlList(self, titel):
-        liste = BedingungsListe(
-            self,
-            self.regeln,
-            self.daten,
-            size=(100, -1),
-            typ=self.typ,
-            titel=titel,
-        )
-        return liste
-
-    def setupEvents(self):
-        self.Bind(wx.EVT_BUTTON, self.newItem, id=self.newBtn.GetId())
-        self.Bind(wx.EVT_BUTTON, self.delItem, id=self.delBtn.GetId())
-        self.Bind(wx.EVT_BUTTON, self.clrItem, id=self.clrBtn.GetId())
-        self.Bind(wx.EVT_KEY_DOWN, self.onKeyPress)
-
-    def onKeyPress(self, event):
-        keycode = event.GetKeyCode()
-
-        index = self.listbox.GetFocusedItem()
-        if index < 0:
-            return
-
-        if keycode == wx.WXK_UP and index > 0:
-            self.listbox.Focus(index-1)
-        elif keycode == wx.WXK_DOWN and index < self.listbox.GetItemCount()-1:
-            self.listbox.Focus(index+1)
-        elif keycode == wx.WXK_DELETE or keycode == wx.WXK_NUMPAD_DELETE:
-            self.DelItem(event)
-
     def newItem(self, event):
         with BedingungswahlDialog(self, wx.ID_ANY, "Neue Bedingung", self.daten) as dlg:
             if dlg.ShowModal() == wx.ID_OK:
@@ -792,8 +655,6 @@ class BedingungsPanel(ListePanel):
                 if text != '' and aktiveRegel is not None:
                     aktiveRegel.addLeistung(text, self.typ)
 
-    def delItem(self, event):
-        self.listbox.deleteSelected()
 
     def clrItem(self, event):
         aktiveRegel = self.regeln.aktiveRegel
@@ -1040,35 +901,68 @@ class TarmedpaketGUI(wx.Frame):
 
         hBox2 = wx.BoxSizer(wx.HORIZONTAL)
 
-        self.summaryPanel = SummaryPanel(panel)
-        hBox2.Add(self.summaryPanel, proportion = 1, flag=wx.EXPAND|wx.ALL, border=15)
+        ruleBox = wx.StaticBox(panel, label="Infos")
+        ruleBoxSizer = wx.StaticBoxSizer(ruleBox, wx.HORIZONTAL)
+
+        summaryPanel = SummaryPanel(panel)
+        ruleBoxSizer.Add(summaryPanel, flag=wx.EXPAND|wx.ALL, border=15)
+
+        hBox2.Add(ruleBoxSizer, proportion = 1, flag=wx.EXPAND|wx.ALL, border=15)
+
+        ruleBox = wx.StaticBox(panel, label="Kategorien")
+        ruleBoxSizer = wx.StaticBoxSizer(ruleBox, wx.HORIZONTAL)
+
+        kategorieListe = RegelListe(
+            panel,
+            regeln=self.regeln,
+            daten=self.daten,
+            size=(150, -1),
+            titel=LIST_HEADER['KategorieListe'],
+        )
+        ruleBoxSizer.Add(kategorieListe, flag=wx.EXPAND|wx.ALL, border=10)
+
+        hBox2.Add(ruleBoxSizer, proportion=0, flag=wx.EXPAND|wx.ALL, border=15)
 
         ruleBox = wx.StaticBox(panel, label="Regeln")
         ruleBoxSizer = wx.StaticBoxSizer(ruleBox, wx.HORIZONTAL)
 
 
-        regelPanel = RegelPanel(
-            panel, titel=LIST_HEADER['regel'],
-            regeln=self.regeln, daten=self.daten
+        regelPanel = RegelListe(
+            panel,
+            regeln=self.regeln,
+            daten=self.daten,
+            size=(150, -1),
+            titel=LIST_HEADER['RegelListe'],
         )
             
-        bPanel1 = BedingungsPanel(
-            panel, typ=Regel.UND, titel=LIST_HEADER[Regel.UND], 
-            regeln=self.regeln, daten=self.daten
+        bPanel1 = BedingungsListe(
+            panel,
+            regeln=self.regeln,
+            daten=self.daten,
+            size=(150, -1),
+            typ=Regel.UND,
         )
-        bPanel2 = BedingungsPanel(
-            panel, typ=Regel.ODER, titel=LIST_HEADER[Regel.ODER], 
-            regeln=self.regeln, daten=self.daten
+        bPanel2 = BedingungsListe(
+            panel,
+            regeln=self.regeln,
+            daten=self.daten,
+            size=(150, -1),
+            typ=Regel.ODER,
         )
-        bPanel3 = BedingungsPanel(
-            panel, typ=Regel.NICHT, titel=LIST_HEADER[Regel.NICHT], 
-            regeln=self.regeln, daten=self.daten
+        bPanel3 = BedingungsListe(
+            panel,
+            regeln=self.regeln,
+            daten=self.daten,
+            size=(150, -1),
+            typ=Regel.UND,
         )
 
-        ruleBoxSizer.Add(regelPanel, proportion=0, flag=wx.EXPAND|wx.ALL, border=15)
-        ruleBoxSizer.Add(bPanel1, proportion=0, flag=wx.EXPAND|wx.ALL, border=15)
-        ruleBoxSizer.Add(bPanel2, proportion=0, flag=wx.EXPAND|wx.ALL, border=15)
-        ruleBoxSizer.Add(bPanel3, proportion=0, flag=wx.EXPAND|wx.ALL, border=15)
+        flags = wx.EXPAND|wx.BOTTOM|wx.TOP|wx.LEFT
+        border = 10
+        ruleBoxSizer.Add(regelPanel, proportion=0, flag=flags|wx.RIGHT, border=border)
+        ruleBoxSizer.Add(bPanel1, proportion=0, flag=flags, border=border)
+        ruleBoxSizer.Add(bPanel2, proportion=0, flag=flags, border=border)
+        ruleBoxSizer.Add(bPanel3, proportion=0, flag=flags|wx.RIGHT, border=border)
 
         hBox2.Add(ruleBoxSizer, proportion=0, flag=wx.EXPAND|wx.ALL, border=15)
 
