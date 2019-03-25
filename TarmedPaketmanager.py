@@ -4,13 +4,13 @@ import pathlib
 
 from .ExcelCalc import datenEinlesen, createPakete, writePaketeToExcel
 
-
-class ExcelReader(threading.Thread):
+class ExcelReader(QThread):
     """Thread, um ein Excel einzulesen"""
 
+    signal = QtCore.pyqtSignal(dict)
+
     def __init__(self, parent, fname):
-        threading.Thread.__init__(self)
-        self._parent = parent
+        super().__init__()
         self._fname = fname
         self.start()
 
@@ -25,19 +25,8 @@ class ExcelReader(threading.Thread):
             else:
                 success = False
 
-            wx.CallAfter(
-                pub.sendMessage,
-                'excel.read',
-                success=success,
-                data=result,
-            )
         except Exception as error:
             errMsg = '{}'.format(error)
-            wx.CallAfter(pub.sendMessage,
-                'excel.read',
-                success=False,
-                msg=errMsg,
-            )
 
 class ExcelPaketWriter(threading.Thread):
     """Thread, um ein Excel zu speichern"""
