@@ -2,7 +2,6 @@
 
 import sys
 import pathlib
-import PyQt5
 from PyQt5 import QtCore, QtGui, QtWidgets
 from ExcelCalc import datenEinlesen, createPakete, writePaketeToExcel
 from ExcelCalc import Regeln, ExcelDaten
@@ -19,18 +18,24 @@ class ExcelReader(QtCore.QThread):
         self.start()
 
     def run(self):
+        returnValue = {}
+        print('running')
         try:
             result = datenEinlesen(self._fname)
             if result is not None:
                 daten, kategorien = result
                 daten = createPakete(daten, kategorien)
-                success = True
-                result = (daten, kategorien)
+                returnValue['success'] = True
+                returnValue['result'] = (daten, kategorien)
             else:
-                success = False
+                returnValue['success'] = False
 
         except Exception as error:
-            errMsg = '{}'.format(error)
+            returnValue['success'] = False
+            returnValue['errMsg'] = '{}'.format(error)
+
+        print('finish')
+        self.signal.emit(returnValue)
 
 class ExcelPaketWriter(QtCore.QThread):
     """Thread, um ein Excel zu speichern"""
@@ -259,7 +264,7 @@ class ExcelPaketWriter(QtCore.QThread):
         # if aktiveRegel is not None:
             # aktiveRegel.clearItems(self.typ)
 
-class RegelListe(QtCore.QAbstractItemModel):
+class RegelListe(QtCore.QAbstractListModel):
     def __init__(self, regeln):
         super().__init__()
         self._regeln = regeln
@@ -271,60 +276,27 @@ class RegelListe(QtCore.QAbstractItemModel):
     def data(self, index, role):
         """Ueberschrieben von QAbstractListModel"""
         row = index.row()
-        return QtCore.QVariant(self._regeln.regeln[row].name)
-
-    def columnCount(self, parent=None):
-        return 1
-
+        if role == QtCore.Qt.DisplayRole:
+            return self._regeln.regeln[row].name
+        return QtCore.QVariant()
 
 
 class TarmedPaketManagerApp(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
-        self.ui = MainWindow.Ui_MainWindow()
-        self.ui.setupUi(self)
+
+        self._workerThread = None
+
+        self.uInterface = MainWindow.Ui_MainWindow()
+        self.uInterface.setupUi(self)
 
         self.daten = ExcelDaten()
         self.regeln = Regeln(self.daten)
 
-        self.regeln.addRegel('bla')
-        self.regeln.addRegel('bla2')
-        
-        mm = QtGui.QStandardItemModel(self.ui.listView_regeln)
-        item = QtGui.QStandardItem("new")
-        mm.appendRow(item)
         self._regelListe = RegelListe(self.regeln)
-        self.ui.listView_regeln.setModel(self._regelListe)
-        self.ui.testtable.setModel(self._regelListe)
+        self.uInterface.listView_regeln.setModel(self._regelListe)
 
-
-    # name = "Tarmed Pakete"
-    # windowSize = (1300, 800)
-
-    # def __init__(self, parent):
-        # super().__init__(parent, 
-                # title=self.name,
-                # size=self.windowSize,
-                # )
-
-        # self._currentWorker = None
-
-
-        # self.initUI()
-        # self.setupEvents()
-        # self.Centre()
-
-    # def setupEvents(self):
-        # self.Bind(wx.EVT_CLOSE, self.onCloseFrame)
-        # self.Bind(wx.EVT_MENU, self.onCloseFrame, self.fileMenuExitItem)
-        # self.Bind(wx.EVT_MENU, self.onSaveRule, self.fileMenuSaveRule)
-        # self.Bind(wx.EVT_MENU, self.onLoadRule, self.fileMenuLoadRule)
-        # self.Bind(wx.EVT_MENU, self.onSaveExcel, self.fileMenuExportExcel)
-        # self.Bind(wx.EVT_MENU, self.onSaveRegelExcel, self.fileMenuExportRegelExcel)
-        # self.Bind(wx.EVT_BUTTON, self.openExcel, self.excelOpenButton)
-
-        # pub.subscribe(self.finishWrite, 'excel.write')
-        # pub.subscribe(self.onFinishExcelCalc, 'excel.read')
+        self.uInterface.actionRohdaten_laden.triggered.connect(self.openExcel)
 
     # def finishWrite(self, success, msg=None):
         # """Funktion, die nach dem Schreiben eines Excels aufgerufen wird
@@ -463,173 +435,57 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
         # else:
             # event.StopPropagation()
 
-    # def initMenuBar(self):
-        # menubar = wx.MenuBar()
+    def openExcel(self):
+        """Laedt die Rohdaten"""
+        options = QtWidgets.QFileDialog.Options()
+        options |= QtWidgets.QFileDialog.DontUseNativeDialog
+        fileName, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Rohdaten laden",
+            "","Excel Files (*.xlsx *.xls);;CSV Files (*.csv)",
+            options=options
+        )
+        if fileName:
+            self._workerThread = ExcelReader(self, fileName)
+            self._workerThread.signal.connect(self.finishReadExcel)
+            self.disableWindow()
 
-        # fileMenu = wx.Menu()
-        # self.fileMenuExportExcel = wx.MenuItem(
-            # fileMenu,
-            # wx.ID_ANY,
-            # text="Export Excel",
-        # )
-        # fileMenu.Append(self.fileMenuExportExcel)
+    def finishReadExcel(self, result):
+        """ Funktion, die nach dem Lesen eines Excels aufgerufen wird
 
-        # self.fileMenuExportRegelExcel = wx.MenuItem(
-            # fileMenu,
-            # wx.ID_ANY,
-            # text="Export Bedingungen in Excel",
-        # )
-        # fileMenu.Append(self.fileMenuExportRegelExcel)
-
-        # fileMenu.AppendSeparator()
-
-        # self.fileMenuSaveRule = wx.MenuItem(
-            # fileMenu,
-            # wx.ID_SAVE,
-            # text="Regeln speichern",
-        # )
-        # self.fileMenuLoadRule = wx.MenuItem(
-            # fileMenu,
-            # wx.ID_OPEN,
-            # text="Regeln laden",
-        # )
-
-        # fileMenu.Append(self.fileMenuSaveRule)
-        # fileMenu.Append(self.fileMenuLoadRule)
-
-        # fileMenu.AppendSeparator()
-
-        # self.fileMenuExitItem = wx.MenuItem(fileMenu, wx.ID_EXIT, '&Quit\tCtrl+Q')
-        # fileMenu.Append(self.fileMenuExitItem)
-
-        # menubar.Append(fileMenu, '&Datei')
-        # self.SetMenuBar(menubar)
-
+        :result: Dict mit dem Eintrag success
+        """
+        if result['success']:
+            print('success')
+            # self.daten.dataframe = data[0]
+            # kategorien = data[1]
+            # if kategorien is not None:
+                # for kategorie in kategorien:
+                    # self.daten.addKategorie(kategorie)
+            # TODO
+            # self.summaryPanel.updateTotal( self.regeln.get_anzahl_falldaten() )
+            # self.daten.updateSummaryPanel()
+        else:
+            errMsg = result.get('errMsg', '')
+            if errMsg:
+                print('fehler: ', errMsg)
+                # wx.MessageBox(
+                    # message=errMsg,
+                    # caption='Fehler',
+                    # style=wx.OK | wx.ICON_INFORMATION,
+                # )
+        self.enableWindow()
 
 
-    # def initUI(self):
-        # """Initialisert die UI Elemente"""
-        # self.initMenuBar()
+    def disableWindow(self):
+        """Schaltet das Fenster in den Wartemodus"""
+        QtWidgets.QApplication.setOverrideCursor(QtGui.QCursor(QtCore.Qt.WaitCursor))
+        self.setEnabled(False)
 
-        # panel = wx.Panel(self)
-        # self.panel = panel
-
-        # mainBox = wx.BoxSizer(wx.VERTICAL)
-
-        # hBox1 = wx.BoxSizer(wx.HORIZONTAL)
-        # text = wx.StaticText(panel, label='Aktuelles Excel')
-        # hBox1.Add(text, flag=wx.RIGHT|wx.TOP, border=5)
-
-        # self.excelPath = wx.TextCtrl(panel)
-        # hBox1.Add(self.excelPath, proportion=1, flag=wx.LEFT, border=10)
-
-        # self.excelOpenButton = wx.Button(panel, label='Öffnen')
-        # hBox1.Add(self.excelOpenButton, flag=wx.LEFT|wx.RIGHT, border=15)
-
-        # mainBox.Add(hBox1, flag=wx.TOP|wx.LEFT|wx.RIGHT|wx.EXPAND, border=15)
-
-        # # -----------------------------------
-        # line = wx.StaticLine(panel)
-        # mainBox.Add(line, flag=wx.EXPAND|wx.BOTTOM|wx.TOP, border=15)
-
-        # hBox2 = wx.BoxSizer(wx.HORIZONTAL)
-
-        # ruleBox = wx.StaticBox(panel, label="Infos")
-        # ruleBoxSizer = wx.StaticBoxSizer(ruleBox, wx.HORIZONTAL)
-
-        # summaryPanel = SummaryPanel(panel)
-        # ruleBoxSizer.Add(summaryPanel, flag=wx.EXPAND|wx.ALL, border=15)
-
-        # hBox2.Add(ruleBoxSizer, proportion = 1, flag=wx.EXPAND|wx.ALL, border=15)
-
-        # ruleBox = wx.StaticBox(panel, label="Kategorien")
-        # ruleBoxSizer = wx.StaticBoxSizer(ruleBox, wx.HORIZONTAL)
-
-        # kategorieListe = RegelListe(
-            # panel,
-            # regeln=self.regeln,
-            # daten=self.daten,
-            # size=(150, -1),
-            # titel=LIST_HEADER['KategorieListe'],
-        # )
-        # ruleBoxSizer.Add(kategorieListe, flag=wx.EXPAND|wx.ALL, border=10)
-
-        # hBox2.Add(ruleBoxSizer, proportion=0, flag=wx.EXPAND|wx.ALL, border=15)
-
-        # ruleBox = wx.StaticBox(panel, label="Regeln")
-        # ruleBoxSizer = wx.StaticBoxSizer(ruleBox, wx.HORIZONTAL)
-
-
-        # regelPanel = RegelListe(
-            # panel,
-            # regeln=self.regeln,
-            # daten=self.daten,
-            # size=(150, -1),
-            # titel=LIST_HEADER['RegelListe'],
-        # )
-            
-        # bPanel1 = BedingungsListe(
-            # panel,
-            # regeln=self.regeln,
-            # daten=self.daten,
-            # size=(150, -1),
-            # typ=Regel.UND,
-        # )
-        # bPanel2 = BedingungsListe(
-            # panel,
-            # regeln=self.regeln,
-            # daten=self.daten,
-            # size=(150, -1),
-            # typ=Regel.ODER,
-        # )
-        # bPanel3 = BedingungsListe(
-            # panel,
-            # regeln=self.regeln,
-            # daten=self.daten,
-            # size=(150, -1),
-            # typ=Regel.UND,
-        # )
-
-        # flags = wx.EXPAND|wx.BOTTOM|wx.TOP|wx.LEFT
-        # border = 10
-        # ruleBoxSizer.Add(regelPanel, proportion=0, flag=flags|wx.RIGHT, border=border)
-        # ruleBoxSizer.Add(bPanel1, proportion=0, flag=flags, border=border)
-        # ruleBoxSizer.Add(bPanel2, proportion=0, flag=flags, border=border)
-        # ruleBoxSizer.Add(bPanel3, proportion=0, flag=flags|wx.RIGHT, border=border)
-
-        # hBox2.Add(ruleBoxSizer, proportion=0, flag=wx.EXPAND|wx.ALL, border=15)
-
-        # mainBox.Add(hBox2, proportion=1, flag=wx.LEFT|wx.RIGHT|wx.EXPAND, border=15)
-
-        # panel.SetSizer(mainBox)
-
-    # def openExcel(self, *_):
-        # """Oeffnet ein Excel mit Falldaten"""
-        # openFileDialog = wx.FileDialog(
-            # self,
-            # "Wählen",
-            # "",
-            # "Excel files (*.xlsx;*.xls)|*.xlsx;*.xls",
-            # "",
-            # wx.FD_OPEN | wx.FD_FILE_MUST_EXIST,
-        # )
-        # if not openFileDialog.ShowModal() == wx.ID_OK:
-            # return
-        # filePath = openFileDialog.GetPath()
-        # openFileDialog.Destroy()
-        # self.disableWindow()
-        # self.excelPath.SetValue(filePath)
-        # self._currentWorker = ExcelReader(self, filePath)
-
-    # def disableWindow(self):
-        # """Schaltet das Fenster in den Wartemodus"""
-        # self.SetCursor(wx.Cursor(wx.CURSOR_WAIT))
-        # self.Disable()
-
-    # def enableWindow(self):
-        # """Schaltet den Wartemodus aus"""
-        # self.SetCursor(wx.Cursor(wx.CURSOR_ARROW))
-        # self.Enable()
+    def enableWindow(self):
+        """Schaltet den Wartemodus aus"""
+        self.setEnabled(True)
+        QtWidgets.QApplication.restoreOverrideCursor()
 
     # def menuhandler(self, event):
         # """Funktion, die ein MenuEvent handled"""
