@@ -173,6 +173,8 @@
     <addaction name="actionRohdaten_laden"/>
     <addaction name="separator"/>
     <addaction name="actionExcel_exportieren"/>
+    <addaction name="separator"/>
+    <addaction name="action_Exit"/>
    </widget>
    <widget class="QMenu" name="menuRegeln">
     <property name="title">
@@ -182,6 +184,8 @@
     <addaction name="separator"/>
     <addaction name="actionRegeln_speichern"/>
     <addaction name="actionRegel_laden"/>
+    <addaction name="separator"/>
+    <addaction name="actionRegelExcel_exportieren"/>
    </widget>
    <widget class="QMenu" name="menuHilfe">
     <property name="title">
@@ -193,6 +197,7 @@
      <string>&amp;Kategorien</string>
     </property>
     <addaction name="actionNeue_ategorie"/>
+    <addaction name="actionKategorien_l_schen"/>
    </widget>
    <addaction name="menuRohdaten_laden"/>
    <addaction name="menuKategorie"/>
@@ -212,22 +217,37 @@
   </action>
   <action name="actionExcel_exportieren">
    <property name="text">
-    <string>Excel exportieren</string>
+    <string>Excel &amp;exportieren</string>
    </property>
   </action>
   <action name="actionNeue_Regel">
    <property name="text">
-    <string>Neue Regel</string>
+    <string>&amp;Neue Regel</string>
    </property>
   </action>
   <action name="actionRegeln_speichern">
    <property name="text">
-    <string>Regeln speichern</string>
+    <string>Regeln &amp;speichern</string>
    </property>
   </action>
   <action name="actionRegel_laden">
    <property name="text">
-    <string>Regel laden</string>
+    <string>Regeln &amp;laden</string>
+   </property>
+  </action>
+  <action name="actionKategorien_l_schen">
+   <property name="text">
+    <string>Kategorien löschen</string>
+   </property>
+  </action>
+  <action name="actionRegelExcel_exportieren">
+   <property name="text">
+    <string>Excel &amp;exportieren</string>
+   </property>
+  </action>
+  <action name="action_Exit">
+   <property name="text">
+    <string>E&amp;xit</string>
    </property>
   </action>
  </widget>
