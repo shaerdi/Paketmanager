@@ -418,23 +418,21 @@ class Regeln(ObserverSubject):
         with path.with_suffix('.tpf').open('rb') as f:
             regelnDict = pickle.load(f)
 
-        if (
-                not isinstance(regelnDict, dict)
-                or ({'UND', 'ODER', 'NICHT'} - regelnDict.keys())
-        ):
+        try:
+            self.regeln = []
+            for name, bedingungen in regelnDict.items():
+                neueRegel = Regel(name, self._excelDaten)
+                for leistung in bedingungen[Regel.UND]:
+                    neueRegel.addLeistung(leistung, Regel.UND)
+                for leistung in bedingungen[Regel.ODER]:
+                    neueRegel.addLeistung(leistung, Regel.ODER)
+                for leistung in bedingungen[Regel.NICHT]:
+                    neueRegel.addLeistung(leistung, Regel.NICHT)
+                self.regeln.append(neueRegel)
+        except AttributeError:
             raise UIError("Fehler beim Laden der Regeln, ungültiges File")
-
-        self.regeln = []
-        for name, bedingungen in regelnDict.items():
-            neueRegel = Regel(name, self._excelDaten, self.notifyObserver)
-            for leistung in bedingungen['UND']:
-                neueRegel.addLeistung(leistung, Regel.UND)
-                print(leistung)
-            for leistung in bedingungen['ODER']:
-                neueRegel.addLeistung(leistung, Regel.ODER)
-            for leistung in bedingungen['NICHT']:
-                neueRegel.addLeistung(leistung, Regel.NICHT)
-            self.regeln.append(neueRegel)
+        except KeyError:
+            raise UIError("Fehler beim Laden der Regeln, ungültiges File")
         self.notifyObserver()
         self.updateRegel()
 

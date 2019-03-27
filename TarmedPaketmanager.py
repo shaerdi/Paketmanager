@@ -2,9 +2,10 @@
 
 import sys
 import pathlib
+import pickle
 from PyQt5 import QtCore, QtGui, QtWidgets
 from ExcelCalc import datenEinlesen, createPakete, writePaketeToExcel
-from ExcelCalc import Regeln, ExcelDaten, Regel
+from ExcelCalc import Regeln, ExcelDaten, Regel, UIError
 from UI import MainWindow, LeistungswahldialogUI
 
 class ExcelReader(QtCore.QThread):
@@ -313,9 +314,9 @@ class RegelListe(QtCore.QAbstractListModel):
     neueLeistung = QtCore.pyqtSignal(int)
     deleteLeistung = QtCore.pyqtSignal(int)
 
-    def __init__(self, regeln, listViews):
+    def __init__(self, excelDaten, listViews):
         super().__init__()
-        self._regeln = regeln
+        self._regeln = Regeln(excelDaten)
         self._regeln.registerObserver(self)
         self._bedingungsListViews = listViews
         for t, view in listViews.items():
@@ -374,7 +375,43 @@ class RegelListe(QtCore.QAbstractListModel):
             return True
         return False
 
+    def clearRegeln(self):
+        nItems = self.rowCount()
+        self.beginRemoveRows(QtCore.QModelIndex(), 0, nItems)
+        self._regeln.clearRegeln()
+        self.endRemoveRows()
 
+    def loadRegelnFromFile(self, filename):
+        self.clearRegeln()
+
+        path = pathlib.Path(filename)
+        with path.with_suffix('.tpf').open('rb') as f:
+            regelnDict = pickle.load(f)
+
+        try:
+            regeln = []
+            for name, bedingungen in regelnDict.items():
+                neueRegel = Regel(name, self._regeln._excelDaten)
+                for leistung in bedingungen[Regel.UND]:
+                    neueRegel.addLeistung(leistung, Regel.UND)
+                for leistung in bedingungen[Regel.ODER]:
+                    neueRegel.addLeistung(leistung, Regel.ODER)
+                for leistung in bedingungen[Regel.NICHT]:
+                    neueRegel.addLeistung(leistung, Regel.NICHT)
+                regeln.append(neueRegel)
+
+            self.beginInsertRows(QtCore.QModelIndex(), 0, len(regeln))
+            self._regeln.regeln = regeln
+            self.endInsertRows()
+        except AttributeError:
+            raise UIError("Fehler beim Laden der Regeln, ungültiges File")
+        except KeyError:
+            raise UIError("Fehler beim Laden der Regeln, ungültiges File")
+
+
+    def saveRegelnToFile(self, fileName):
+        """Speichert die Regeln in ein File"""
+        self._regeln.saveToFile(fileName)
 
 class TarmedPaketManagerApp(QtWidgets.QMainWindow):
     def __init__(self):
@@ -386,7 +423,6 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
         self.uInterface.setupUi(self)
 
         self._excelDaten = ExcelDaten()
-        self._regeln = Regeln(self._excelDaten)
 
         listViews = {
             Regel.UND : self.uInterface.listView_regel_und,
@@ -394,7 +430,7 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
             Regel.NICHT : self.uInterface.listView_regeln_nicht,
         }
 
-        self._regelListe = RegelListe(self._regeln, listViews)
+        self._regelListe = RegelListe(self._excelDaten, listViews)
         self.uInterface.listView_regeln.setModel(self._regelListe)
         self.uInterface.listView_regeln.installEventFilter(self._regelListe)
         self.uInterface.listView_regeln.selectionModel().currentChanged.connect(
@@ -466,7 +502,7 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
                     QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No ,)
                 if reply == QtWidgets.QMessageBox.No:
                     return
-            self._regeln.saveToFile(path)
+            self._regelListe.saveRegelnToFile(path)
 
     def loadRegeln(self):
         """Laedt ein Regelfile"""
@@ -479,7 +515,12 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
             options=options
         )
         if fileName:
-            self._regeln.loadFromFile(fileName)
+            try:
+                self._regelListe.loadRegelnFromFile(fileName)
+            except UIError as e:
+                box = QtWidgets.QMessageBox.warning(self, "Warnung", str(e),
+                    QtWidgets.QMessageBox.Ok,)
+
 
     def addLeistungToRegel(self, typ=None):
         if self._regeln.getAktiv():
@@ -565,7 +606,6 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
             # )
 
     def quitApp(self):
-        print('bla')
         reply = QtWidgets.QMessageBox.question(self, "Beenden",
                 "Programm wirklich beenden?",
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No ,)
