@@ -9,7 +9,7 @@ import xlsxwriter
 from collections import defaultdict
 
 class UIError(Exception):
-    pass
+   pass
 
 def convertLeistung(leistung):
     """Macht aus einer Zahl eine Buchstabenfolge (String)
@@ -57,10 +57,7 @@ def datenEinlesen(dateiname):
             )
         kategorien = kategorien.values.flatten()
     except IndexError:
-        raise IOError(
-                "Keine Kategorien gefunden. Gibt es ein zweites "
-              + "Sheet in der Datei {}?".format(dateiname)
-              )
+        kategorien = None
     return daten, kategorien
 
 def sheetSchreiben(sheetname, daten, writer):
@@ -198,16 +195,6 @@ class ObserverSubject:
         for observer in self._observer:
             observer.update()
 
-    def preNotifyObserver(self):
-        """Ruft die Methode preupdate fuer alle Observer auf
-
-        """
-        for observer in self._observer:
-            try:
-                observer.preUpdate()
-            except AttributeError:
-                pass
-
 class Regel:
     """Stellt eine Regel dar, die ein Paket erfuellen kann oder nicht"""
 
@@ -215,7 +202,7 @@ class Regel:
     ODER = 1
     NICHT = 2
 
-    def __init__(self, name, daten, notifyFunc):
+    def __init__(self, name, daten):
         self.name = name
         self._bedingungUnd = []
         self._bedingungOder = []
@@ -223,7 +210,6 @@ class Regel:
         self.anzahl = '-'
         self._daten = daten
         self._erfuellt = None
-        self._notifyFunc = notifyFunc
 
     def getDict(self):
         """Erstellt ein Dict aus den Bedingungen dieser Regel
@@ -232,9 +218,9 @@ class Regel:
 
         """
         return {
-            'UND' : self._bedingungUnd,
-            'ODER' : self._bedingungOder,
-            'NICHT' : self._bedingungNicht,
+            Regel.UND: self._bedingungUnd,
+            Regel.ODER : self._bedingungOder,
+            Regel.NICHT : self._bedingungNicht,
         }
 
     def addLeistung(self, newItem, typ):
@@ -253,7 +239,6 @@ class Regel:
         else:
             raise RuntimeError("Unbekannte Bedingung")
         self.update()
-        self._notifyFunc()
 
     def removeLeistung(self, index, typ):
         """Loescht eine Leistung aus einer Liste
@@ -271,7 +256,6 @@ class Regel:
         else:
             raise RuntimeError("Unbekannte Bedingung")
         self.update()
-        self._notifyFunc()
 
     def clearItems(self, typ):
         """Loescht die Leistungen aus einer Liste
@@ -289,7 +273,6 @@ class Regel:
         else:
             raise RuntimeError("Unbekannte Bedingung")
         self.update()
-        self._notifyFunc()
 
     def update(self):
         """Berechnet die Pakete, die diese Regel erfuellen"""
@@ -346,7 +329,7 @@ class Regeln(ObserverSubject):
     def __init__(self, excelDaten):
         super().__init__()
         self.regeln = []
-        self.aktiveRegel = None
+        self._aktiveRegel = None
         self._excelDaten = excelDaten
         self._excelDaten.registerObserver(self)
 
@@ -372,8 +355,7 @@ class Regeln(ObserverSubject):
 
         :name: Name der neuen Regel
         """
-        neueRegel = Regel(name, self._excelDaten, self.notifyObserver)
-        self.preNotifyObserver()
+        neueRegel = Regel(name, self._excelDaten)
         self.regeln.append(neueRegel)
         self.notifyObserver()
 
@@ -397,7 +379,7 @@ class Regeln(ObserverSubject):
     def clearRegeln(self):
         """Loescht alle Regeln"""
         self.regeln = []
-        self.aktiveRegel = None
+        self._aktiveRegel = None
         self.notifyObserver()
 
     def getBedingungsliste(self):
@@ -461,9 +443,25 @@ class Regeln(ObserverSubject):
 
         :index: Index der neuen aktiven Regel
         """
+        if index is None:
+            self._aktiveRegel = ''
         if 0 <= index < len(self.regeln):
-            self.aktiveRegel = self.regeln[index]
+            self._aktiveRegel = self.regeln[index]
         self.notifyObserver()
+
+    def getAktiv(self):
+        """Gibt die momentan aktive Regel zurueck """
+        return self._aktiveRegel
+
+    def addLeistungToAktiverRegel(self, name, typ):
+        if self._aktiveRegel:
+            self._aktiveRegel.addLeistung(name, typ)
+            self.notifyObserver()
+
+    def removeLeistungenFromAktiverRegel(self, indices, typ):
+        if self._aktiveRegel:
+            self._aktiveRegel.removeLeistung(name, typ)
+            self.notifyObserver()
 
 
 class ExcelDaten(ObserverSubject):
