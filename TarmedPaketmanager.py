@@ -263,9 +263,10 @@ class ExcelPaketWriter(QtCore.QThread):
             # aktiveRegel.clearItems(self.typ)
 
 class RegelListe(QtCore.QAbstractListModel):
-    def __init__(self, regeln):
+    def __init__(self, regeln, listViews):
         super().__init__()
         self._regeln = regeln
+        self._bedinungsListViews = listViews
 
     def rowCount(self, parent=None):
         """Ueberschrieben von QAbstractListModel"""
@@ -277,6 +278,10 @@ class RegelListe(QtCore.QAbstractListModel):
         if role == QtCore.Qt.DisplayRole:
             return self._regeln.regeln[row].name
         return QtCore.QVariant()
+
+    def update(self):
+        pass
+        # self.dataChanged.emit()
 
 
 class TarmedPaketManagerApp(QtWidgets.QMainWindow):
@@ -294,6 +299,8 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
         self._regelListe = RegelListe(self.regeln)
         self.uInterface.listView_regeln.setModel(self._regelListe)
 
+        self.setupSlots()
+
 
     def setupSlots(self):
         """Definiert die slot Funktionen der Menu Eintraege"""
@@ -304,7 +311,7 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
         uInter.actionExcel_exportieren.triggered.connect(self.writeExcel)
         uInter.actionRegel_laden.triggered.connect(self.loadRegeln)
         uInter.actionRegeln_speichern.triggered.connect(self.writeRegeln)
-        uInter.action_Exit.triggered.connect(self.quit)
+        uInter.action_Exit.triggered.connect(self.quitApp)
 
     def addKategorie(self):
         """Fragt den Benutzer nach einer neuen Kategorie und fuegt sie dem
@@ -315,7 +322,11 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
     def addRegel(self):
         """Fragt den Benutzer nach einer neuen Regel und fuegt sie hinzu
         """
-        pass
+        name, ok = QtWidgets.QInputDialog.getText(self, "Neue Regel",
+                "Name der neuen Regel:")
+        if ok:
+            self.regeln.addRegel(name)
+
 
     def writeExcel(self):
         """Schreibt die Pakete in ein Excel"""
@@ -325,29 +336,23 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
         """Funktion, die nach dem Schreiben einer Datei aufgerufen wird
 
         :result: Dict, das vom Writer zurueck gegeben wird
-        # """
+        """
         if not result['success']:
             errMsg = result.get('errMsg','Es ist ein Fehler aufgetreten')
             box = QtWidgets.QMessageBox.warning(self, "Warnung", errMsg,
                 QtWidgets.QMessageBox.Ok,)
 
-        # if not success and msg is not None:
-            # wx.MessageBox(
-                # msg,
-                # 'Fehler',
-                # wx.OK | wx.ICON_ERROR,
-            # )
-
         self._workerThread = None
         self.enableWindow()
 
     def writeRegeln(self):
+        """Schreibt die Regeln"""
         options = QtWidgets.QFileDialog.Options()
         options |= QtWidgets.QFileDialog.DontUseNativeDialog
-        fileName, _ = QtWidgets.QFileDialog.getOpenFileName(
+        fileName, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "Speichern unter",
-            "","Excel file (*.xlsx *.xls)",
+            "","TPF file (*.tpf)",
             options=options
         )
         if fileName:
@@ -358,12 +363,20 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
                     QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No ,)
                 if reply == QtWidgets.QMessageBox.No:
                     return
-            self.regeln.saveToFile(file_path)
+            self.regeln.saveToFile(path)
 
-        # saveFileDialog.ShowModal()
-        # file_path = pathlib.Path(saveFileDialog.GetPath())
-        # saveFileDialog.Destroy()
-        # self.regeln.saveToFile(file_path)
+    def loadRegeln(self):
+        """Laedt ein Regelfile"""
+        options = QtWidgets.QFileDialog.Options()
+        options |= QtWidgets.QFileDialog.DontUseNativeDialog
+        fileName, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Regeln laden",
+            "","TPF file (*.tpf)",
+            options=options
+        )
+        if fileName:
+            self.regeln.loadFromFile(fileName)
 
     # def onSaveRegelExcel(self,event):
         # saveFileDialog = wx.FileDialog(
@@ -388,33 +401,6 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
                 # wx.OK | wx.ICON_ERROR,
             # )
 
-
-    # def onFinishExcelCalc(self, success, data=None, msg=None):
-        # """ Funktion, die nach dem Lesen eines Excels aufgerufen wird
-
-        # :data: Tuple mit Dataframe und Kategorienliste
-        # :success: Bool ob erfolgreich
-        # :errMsg: Fehlermeldung:
-        # """
-        # if success:
-            # self.daten.dataframe = data[0]
-            # kategorien = data[1]
-            # if kategorien is not None:
-                # for kategorie in kategorien:
-                    # self.daten.addKategorie(kategorie)
-            # # TODO
-            # # self.summaryPanel.updateTotal( self.regeln.get_anzahl_falldaten() )
-            # # self.daten.updateSummaryPanel()
-        # else:
-            # if errMsg:
-                # wx.MessageBox(
-                    # message=errMsg,
-                    # caption='Fehler',
-                    # style=wx.OK | wx.ICON_INFORMATION,
-                # )
-
-        # self._currentWorker = None
-        # self.enableWindow()
 
     # def onExitApp(self, event):
         # self.Destroy()
@@ -465,14 +451,14 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
                 # style=wx.OK | wx.ICON_ERROR,
             # )
 
-    # def onCloseFrame(self, event):
-        # dialog = wx.MessageDialog(self, message="Programm wirklich Schliessen?", caption="", style=wx.YES_NO, pos=wx.DefaultPosition)
-        # response = dialog.ShowModal()
-
-        # if response == wx.ID_YES:
-            # self.onExitApp(event)
-        # else:
-            # event.StopPropagation()
+    def quitApp(self):
+        print('bla')
+        reply = QtWidgets.QMessageBox.question(self, "Beenden",
+                "Programm wirklich beenden?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No ,)
+        if reply == QtWidgets.QMessageBox.No:
+            return
+        QtGui.QGuiApplication.quit()
 
     def openExcel(self):
         """Laedt die Rohdaten"""

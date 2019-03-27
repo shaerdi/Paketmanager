@@ -198,6 +198,16 @@ class ObserverSubject:
         for observer in self._observer:
             observer.update()
 
+    def preNotifyObserver(self):
+        """Ruft die Methode preupdate fuer alle Observer auf
+
+        """
+        for observer in self._observer:
+            try:
+                observer.preUpdate()
+            except AttributeError:
+                pass
+
 class Regel:
     """Stellt eine Regel dar, die ein Paket erfuellen kann oder nicht"""
 
@@ -363,6 +373,7 @@ class Regeln(ObserverSubject):
         :name: Name der neuen Regel
         """
         neueRegel = Regel(name, self._excelDaten, self.notifyObserver)
+        self.preNotifyObserver()
         self.regeln.append(neueRegel)
         self.notifyObserver()
 

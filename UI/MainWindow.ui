@@ -196,7 +196,7 @@
     <property name="title">
      <string>&amp;Kategorien</string>
     </property>
-    <addaction name="actionNeue_ategorie"/>
+    <addaction name="actionNeue_Kategorie"/>
     <addaction name="actionKategorien_l_schen"/>
    </widget>
    <addaction name="menuRohdaten_laden"/>
@@ -205,7 +205,7 @@
    <addaction name="menuHilfe"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
-  <action name="actionNeue_ategorie">
+  <action name="actionNeue_Kategorie">
    <property name="text">
     <string>Neue Kategorie</string>
    </property>
