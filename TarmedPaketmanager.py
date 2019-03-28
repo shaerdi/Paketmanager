@@ -30,7 +30,7 @@ class ExcelReader(QtCore.QThread):
             else:
                 returnValue['success'] = False
 
-        except Exception as error:
+        except UIError as error:
             returnValue['success'] = False
             returnValue['errMsg'] = '{}'.format(error)
 
@@ -38,25 +38,25 @@ class ExcelReader(QtCore.QThread):
 
 class ExcelPaketWriter(QtCore.QThread):
     """Thread, um ein Excel zu speichern"""
-    def __init__(self, parent, fname, daten, kategorien):
+
+    signal = QtCore.pyqtSignal(dict)
+
+    def __init__(self, parent, fname, excelDaten):
         super().__init__()
         self._parent = parent
         self._fname = fname
-        self._kategorien = kategorien
-        self._daten = daten
+        self._kategorien = excelDaten.getKategorien()
+        self._daten = excelDaten.dataframe
         self.start()
 
     def run(self):
+        returnValue = {'success':False}
         try:
             writePaketeToExcel(self._daten, self._kategorien, self._fname)
-            # wx.CallAfter(pub.sendMessage, 'excel.write', success=True)
-        except Exception as error:
-            errMsg = '{}'.format(error)
-            # wx.CallAfter(pub.sendMessage,
-                # 'excel.write',
-                # success=False,
-                # msg=errMsg,
-            # )
+        except UIError as error:
+            returnValue['success'] = False
+            returnValue['errMsg'] = str(error)
+        self.signal.emit(returnValue)
 
 
 # class BedingungswahlDialog(wx.Dialog):
@@ -249,19 +249,30 @@ class ExcelPaketWriter(QtCore.QThread):
                 # aktiveRegel.removeLeistung(index, self._typ)
 
 
-    # def newItem(self, event):
-        # with BedingungswahlDialog(self, wx.ID_ANY, "Neue Bedingung", self.daten) as dlg:
-            # if dlg.ShowModal() == wx.ID_OK:
-                # text = dlg.GetValue()
-                # aktiveRegel = self.regeln.aktiveRegel
-                # if text != '' and aktiveRegel is not None:
-                    # aktiveRegel.addLeistung(text, self.typ)
+class InfoTable:
+    def __init__(self):
+        self._getFuncs = []
+        self.model = QtGui.QStandardItemModel(0,2)
+
+        header0 = QtGui.QStandardItem("Name")
+        header1 = QtGui.QStandardItem("Wert")
+        self.model.setHorizontalHeaderItem(0, header0)
+        self.model.setHorizontalHeaderItem(1, header1)
 
 
-    # def clrItem(self, event):
-        # aktiveRegel = self.regeln.aktiveRegel
-        # if aktiveRegel is not None:
-            # aktiveRegel.clearItems(self.typ)
+    def addInfo(self, name, valueFunc):
+        """Fuegt ein InfoItem hinzu"""
+        self._getFuncs.append(valueFunc)
+
+        item0 = QtGui.QStandardItem(name)
+        item1 = QtGui.QStandardItem(valueFunc())
+        item1.setTextAlignment(QtCore.Qt.AlignRight)
+        self.model.appendRow([item0,item1])
+
+    def update(self):
+        for i, func in enumerate(self._getFuncs):
+            self.model.item(i,1).setText(str(func()))
+
 
 class Leistungswahldialog(QtWidgets.QDialog):
     def __init__(self, parent, excelDaten, typ):
@@ -275,23 +286,45 @@ class Leistungswahldialog(QtWidgets.QDialog):
                 Regel.ODER : self._uInterface.radioButton_ODER,
                 Regel.NICHT : self._uInterface.radioButton_NICHT,
         }
+
         typ = typ or Regel.UND
-        self._radioButtons[typ].setChecked(True)
+        if typ < 0:
+            for _,b in self._radioButtons.items():
+                b.hide()
+            self._uInterface.label_3.hide()
+        else:
+            self._radioButtons[typ].setChecked(True)
 
         self.ok = False
         self.setupSlots()
+        self.setupListView()
+        self._neueLeistung.setFocus()
+
+    def clickOnLeistung(self, index):
+        """Fuegt die angeklickte Leistung in das Textfeld ein"""
+        self._neueLeistung.setText(index.data())
+
+    def doubleClickOnLeistung(self, index):
+        """Fuegt die angeklickte Leistung in das Textfeld ein und schliesst das
+        Widget
+        """
+        self.okClicked()
 
     def setupListView(self):
         filterLeistung = self._neueLeistung.text()
         leistungen = self._excelDaten.getLeistungen(filterLeistung)
-        model = QtCore.QStandardItemModel()
-        model.appendRow(leistungen)
+        model = QtGui.QStandardItemModel()
+        for leistung in leistungen:
+            model.appendRow(QtGui.QStandardItem(leistung))
         self._uInterface.listView_Vorschlaege.setModel(model)
 
     def setupSlots(self):
         uInter = self._uInterface
         uInter.buttonBox.accepted.connect(self.okClicked)
         uInter.buttonBox.rejected.connect(self.cancelClicked)
+        self._neueLeistung.textEdited.connect(self.setupListView)
+        uInter.listView_Vorschlaege.clicked.connect(self.clickOnLeistung)
+        uInter.listView_Vorschlaege.doubleClicked.connect(self.doubleClickOnLeistung)
 
     def okClicked(self):
         self.ok = True
@@ -308,19 +341,73 @@ class Leistungswahldialog(QtWidgets.QDialog):
                 typ = t
         return self._neueLeistung.text(), typ, self.ok
 
+class KategorieModel(QtCore.QObject):
+    neueKategorie = QtCore.pyqtSignal()
+    """Schreibt die Kategorien in die Liste"""
+    def __init__(self, excelDaten, listView):
+        super().__init__()
+        self._excelDaten = excelDaten
+        self._listView = listView
+
+        self._excelDaten.registerObserver(self)
+
+        self._listView.installEventFilter(self)
+
+    def update(self):
+        kategorien = self._excelDaten.getKategorien()
+        model = QtGui.QStandardItemModel()
+        for kategorie in kategorien:
+            model.appendRow(QtGui.QStandardItem(kategorie))
+        self._listView.setModel(model)
+
+    def deleteSelected(self):
+        """Loescht die selektierten Kategorien"""
+        liste = self._listView
+        selection = liste.selectionModel().selectedIndexes()
+        rows = [index.row() for index in selection]
+        self._excelDaten.removeKategorien(rows)
+        self.update()
+
+    def eventFilter(self, watched, event):
+        """Wird aufgerufen, wenn eine Taste gedrueckt wird"""
+        if event.type() == QtCore.QEvent.KeyPress:
+            if event.key() == QtCore.Qt.Key_Delete:
+                self.deleteSelected()
+                return True
+        elif event.type() == QtCore.QEvent.ContextMenu:
+            self.neueKategorie.emit()
+            return True
+        return False
+
 
 class RegelListe(QtCore.QAbstractListModel):
+    """Model der Regelliste"""
     neueRegel = QtCore.pyqtSignal()
     neueLeistung = QtCore.pyqtSignal(int)
-    deleteLeistung = QtCore.pyqtSignal(int)
 
-    def __init__(self, excelDaten, listViews):
+
+    def __init__(self, regelListView, excelDaten, listViews):
         super().__init__()
         self._regeln = Regeln(excelDaten)
         self._regeln.registerObserver(self)
         self._bedingungsListViews = listViews
         for t, view in listViews.items():
             view.installEventFilter(self)
+        
+        self._regelListView = regelListView
+        self._excelDaten = excelDaten
+
+        self._redBrush = QtGui.QBrush()
+        self._redBrush.setColor(QtGui.QColor(255,150,150))
+
+        self._regelListView.setModel(self)
+        self._regelListView.installEventFilter(self)
+        self._regelListView.selectionModel().currentChanged.connect(
+            self.selectionChanged)
+
+    def registerObserver(self, observer):
+        """Registiert einen Observer der Regeln"""
+        self._regeln.registerObserver(observer)
 
     def rowCount(self, parent=None):
         """Ueberschrieben von QAbstractListModel"""
@@ -334,28 +421,54 @@ class RegelListe(QtCore.QAbstractListModel):
         return QtCore.QVariant()
 
     def selectionChanged(self, current, previous):
+        """Setzt die aktuelle Regel"""
         self._regeln.setAktiv(current.row())
 
     def update(self):
+        """Updated die Bedingungslisten"""
         if self._regeln._aktiveRegel:
             bedingungen = self._regeln._aktiveRegel.getDict()
             for typ in [Regel.UND, Regel.ODER, Regel.NICHT]:
                 model = QtGui.QStandardItemModel()
                 for leistung in bedingungen[typ]:
-                    model.appendRow(QtGui.QStandardItem(leistung))
+                    item = QtGui.QStandardItem(leistung)
+                    if not self._excelDaten.checkItem(leistung):
+                        item.setForeground(self._redBrush)
+                    model.appendRow(item)
                 self._bedingungsListViews[typ].setModel(model)
 
     def addRegel(self, name):
+        """Fuegt eine neue Regel hinzu"""
         nItems = self.rowCount()
         self.beginInsertRows(QtCore.QModelIndex(), nItems, nItems+1)
         self._regeln.addRegel(name)
         self.endInsertRows()
 
     def deleteSelected(self):
-        # TODO
-        pass
+        """Loescht das selektierte Item"""
+        row = self._regelListView.currentIndex().row()
+        self.beginRemoveRows(QtCore.QModelIndex(), row, row+1)
+        self._regeln.removeRegel(row)
+        self.endRemoveRows()
+
+        row = max(row,0)
+        row = min(row,self.rowCount()-1)
+        self._regelListView.setCurrentIndex( self.createIndex(row,0) )
+
+    def deleteSelectedLeistungen(self, typ):
+        """Loescht die selektierten Leistungen der aktiven Regel"""
+        liste = self._bedingungsListViews[typ]
+        selection = liste.selectionModel().selectedIndexes()
+        rows = [index.row() for index in selection]
+        self._regeln.removeLeistungenFromAktiverRegel(rows, typ)
+        self.update()
+
+    def regelIstAktiv(self):
+        """Gibt an, ob eine Regel selektiert ist"""
+        return not self._regeln.getAktiv() is None
 
     def eventFilter(self, watched, event):
+        """Wird aufgerufen, wenn eine Taste gedrueckt wird"""
         typ = None
         for t, view in self._bedingungsListViews.items():
             if view == watched:
@@ -365,7 +478,7 @@ class RegelListe(QtCore.QAbstractListModel):
                 if typ == None:
                     self.deleteSelected()
                 else:
-                    self.deleteLeistung.emit(typ)
+                    self.deleteSelectedLeistungen(typ)
                 return True
         elif event.type() == QtCore.QEvent.ContextMenu:
             if typ == None:
@@ -408,10 +521,20 @@ class RegelListe(QtCore.QAbstractListModel):
         except KeyError:
             raise UIError("Fehler beim Laden der Regeln, ungültiges File")
 
-
     def saveRegelnToFile(self, fileName):
         """Speichert die Regeln in ein File"""
         self._regeln.saveToFile(fileName)
+
+    def getErfuelltAktiveRegel(self):
+        """Gibt die Anzahl der Pakete zurueck, die die aktive Regel erfuellen
+        :returns: Anzahl Pakete
+
+        """
+        return self._regeln.getErfuelltAktiveRegel()
+
+    def addLeistungToAktiverRegel(self, name, typ):
+        self._regeln.addLeistungToAktiverRegel(name, typ)
+
 
 class TarmedPaketManagerApp(QtWidgets.QMainWindow):
     def __init__(self):
@@ -424,19 +547,48 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
 
         self._excelDaten = ExcelDaten()
 
+        self._excelName = ''
+
         listViews = {
             Regel.UND : self.uInterface.listView_regel_und,
             Regel.ODER : self.uInterface.listView_regeln_oder,
             Regel.NICHT : self.uInterface.listView_regeln_nicht,
         }
 
-        self._regelListe = RegelListe(self._excelDaten, listViews)
-        self.uInterface.listView_regeln.setModel(self._regelListe)
-        self.uInterface.listView_regeln.installEventFilter(self._regelListe)
-        self.uInterface.listView_regeln.selectionModel().currentChanged.connect(
-            self._regelListe.selectionChanged)
+        self._regelListe = RegelListe(self.uInterface.listView_regeln, 
+            self._excelDaten, listViews)
+
+        self._kategorieModel = KategorieModel(self._excelDaten, 
+                self.uInterface.listView_kategorien)
+
+        self._infoTable = InfoTable()
+        self.uInterface.infoTableView.setModel(self._infoTable.model)
 
         self.setupSlots()
+        self.setupInfoTable()
+
+
+
+    def setupInfoTable(self):
+        """Baut die InfoTable auf"""
+
+        # Styling
+        table = self.uInterface.infoTableView
+        header = table.horizontalHeader()
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
+
+        # Rows
+        tableInfo = self._infoTable
+        tableInfo.addInfo('Aktuelles Excel', self.getExcelName)
+        tableInfo.addInfo('Anzahl Falldaten',
+                lambda : self._excelDaten.getAnzahlFalldaten() or '-')
+        tableInfo.addInfo('Anzahl verschiedene Leistungen', 
+                lambda : len(self._excelDaten.getLeistungen()) or '-')
+        tableInfo.addInfo('Anzahl Falldaten in aktiver Regel', 
+                self._regelListe.getErfuelltAktiveRegel)
+
+        self._regelListe.registerObserver(tableInfo)
 
 
     def setupSlots(self):
@@ -453,11 +605,13 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
         self._regelListe.neueRegel.connect(self.addRegel)
         self._regelListe.neueLeistung.connect(self.addLeistungToRegel)
 
-    def addKategorie(self):
-        """Fragt den Benutzer nach einer neuen Kategorie und fuegt sie dem
-        Daten modell hinzu
+        self._kategorieModel.neueKategorie.connect(self.addKategorie)
+
+    def getExcelName(self):
+        """Gibt den Namen des aktuellen Excels zurueck
+        :returns: Name des aktuellen Excels
         """
-        pass
+        return self._excelName
 
     def addRegel(self):
         """Fragt den Benutzer nach einer neuen Regel und fuegt sie hinzu"""
@@ -466,10 +620,34 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
         if ok:
             self._regelListe.addRegel(name)
 
+    def addKategorie(self):
+        dialog = Leistungswahldialog(self, self._excelDaten, -1)
+        dialog.exec_()
+        dialog.show()
+        name, typ, ok = dialog.getValue()
+        if ok:
+            self._excelDaten.addKategorie(name)
 
     def writeExcel(self):
         """Schreibt die Pakete in ein Excel"""
-        pass
+        if self._excelDaten.dataframe is None:
+            errMsg = "Keine Daten vorhanden"
+            box = QtWidgets.QMessageBox.warning(self, "Warnung", errMsg,
+                QtWidgets.QMessageBox.Ok,)
+            return
+
+        options = QtWidgets.QFileDialog.Options()
+        options |= QtWidgets.QFileDialog.DontUseNativeDialog
+        fileName, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Rohdaten laden",
+            "","Excel Files (*.xlsx *.xls)",
+            options=options
+        )
+        if fileName:
+            self._workerThread = ExcelPaketWriter(self, fileName, self._excelDaten)
+            self._workerThread.signal.connect(self.finishReadExcel)
+            self.disableWindow()
 
     def finishWrite(self, result):
         """Funktion, die nach dem Schreiben einer Datei aufgerufen wird
@@ -477,7 +655,7 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
         :result: Dict, das vom Writer zurueck gegeben wird
         """
         if not result['success']:
-            errMsg = result.get('errMsg','Es ist ein Fehler aufgetreten')
+            errMsg = result.get('errMsg', 'Es ist ein Fehler aufgetreten')
             box = QtWidgets.QMessageBox.warning(self, "Warnung", errMsg,
                 QtWidgets.QMessageBox.Ok,)
 
@@ -491,17 +669,11 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
         fileName, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "Speichern unter",
-            "","TPF file (*.tpf)",
+            "", "TPF file (*.tpf)",
             options=options
         )
         if fileName:
-            path = pathlib.Path(fileName)
-            if path.exists():
-                reply = QtWidgets.QMessageBox.question(self, "Datei überschreiben",
-                        "Die Datei existiert bereits. Überschreiben?",
-                    QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No ,)
-                if reply == QtWidgets.QMessageBox.No:
-                    return
+            path = pathlib.Path(fileName).with_suffix('.tpf')
             self._regelListe.saveRegelnToFile(path)
 
     def loadRegeln(self):
@@ -511,99 +683,25 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
         fileName, _ = QtWidgets.QFileDialog.getOpenFileName(
             self,
             "Regeln laden",
-            "","TPF file (*.tpf)",
+            "", "TPF file (*.tpf)",
             options=options
         )
         if fileName:
             try:
                 self._regelListe.loadRegelnFromFile(fileName)
-            except UIError as e:
-                box = QtWidgets.QMessageBox.warning(self, "Warnung", str(e),
-                    QtWidgets.QMessageBox.Ok,)
+            except UIError as error:
+                box = QtWidgets.QMessageBox.warning(self, "Warnung", 
+                        str(error), QtWidgets.QMessageBox.Ok,)
 
 
     def addLeistungToRegel(self, typ=None):
-        if self._regeln.getAktiv():
+        if self._regelListe.regelIstAktiv():
             dialog = Leistungswahldialog(self, self._excelDaten, typ)
             dialog.exec_()
             dialog.show()
             name, typ, ok = dialog.getValue()
             if ok:
-                self._regeln.addLeistungToAktiverRegel(name, typ)
-
-
-    # def onSaveRegelExcel(self,event):
-        # saveFileDialog = wx.FileDialog(
-            # self,
-            # "Speichern unter", 
-            # "", 
-            # "", 
-            # "Excel files (*.xlsx; *.xls)|*.xlsx;*.xls", 
-            # wx.FD_SAVE,
-        # )
-        # saveFileDialog.ShowModal()
-        # filePath = pathlib.Path(saveFileDialog.GetPath())
-        # saveFileDialog.Destroy()
-        # try:
-            # dataframe = self.regeln.getBedingungsliste()
-            # self.disableWindow()
-            # self._currentWorker = ExcelDataFrameWriter(self, filePath, dataframe)
-        # except UIError as error:
-            # wx.MessageBox(
-                # "{}".format(error),
-                # 'Fehler',
-                # wx.OK | wx.ICON_ERROR,
-            # )
-
-
-    # def onExitApp(self, event):
-        # self.Destroy()
-
-    # def onSaveExcel(self, event):
-        # saveFileDialog = wx.FileDialog(
-            # self, 
-            # "Speichern unter", "", "",
-            # "Excel files (*.xlsx; *.xls)|*.xlsx;*.xls",
-            # wx.FD_SAVE,
-           # )
-        # saveFileDialog.ShowModal()
-        # filePath = pathlib.Path(saveFileDialog.GetPath())
-        # saveFileDialog.Destroy()
-
-        # if self.daten.dataframe is None:
-            # wx.MessageBox(
-                # 'Noch keine Daten vorhanden',
-                # 'Info',
-                # wx.OK | wx.ICON_INFORMATION,
-            # )
-            # return
-
-        # if filePath:
-            # self.disableWindow()
-            # self._currentWorker = ExcelPaketWriter(
-                # self,
-                # filePath,
-                # self.daten.dataframe,
-                # self.daten.getKategorien(),
-            # )
-
-
-    # def onLoadRule(self, event):
-        # openFileDialog = wx.FileDialog(self, "Öffnen", "", "", 
-                                      # "TarmedPaketGUI files (*.tpf)|*.tpf", 
-                                       # wx.FD_OPEN | wx.FD_FILE_MUST_EXIST,
-                                       # )
-        # openFileDialog.ShowModal()
-        # filePath = pathlib.Path(openFileDialog.GetPath())
-        # openFileDialog.Destroy()
-        # try:
-            # self.regeln.loadFromFile(filePath)
-        # except UIError as error:
-            # wx.MessageBox(
-                # message='{}'.format(error),
-                # caption='Fehler',
-                # style=wx.OK | wx.ICON_ERROR,
-            # )
+                self._regelListe.addLeistungToAktiverRegel(name, typ)
 
     def quitApp(self):
         reply = QtWidgets.QMessageBox.question(self, "Beenden",
@@ -620,13 +718,14 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
         fileName, _ = QtWidgets.QFileDialog.getOpenFileName(
             self,
             "Rohdaten laden",
-            "","Excel Files (*.xlsx *.xls);;CSV Files (*.csv)",
+            "","Excel oder CSV Files (*.xlsx *.xls *.csv)",
             options=options
         )
         if fileName:
             self._workerThread = ExcelReader(self, fileName)
             self._workerThread.signal.connect(self.finishReadExcel)
             self.disableWindow()
+            self._excelName = pathlib.Path(fileName).stem
 
     def finishReadExcel(self, result):
         """ Funktion, die nach dem Lesen eines Excels aufgerufen wird
@@ -635,6 +734,7 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
         """
         if result['success']:
             self._excelDaten.dataframe = result['data'][0]
+            self._excelDaten.clearKategorien()
             kategorien = result['data'][1]
             if kategorien is not None:
                 for kategorie in kategorien:
@@ -649,6 +749,7 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
                     QtWidgets.QMessageBox.Ok,
                 )
 
+        self._infoTable.update()
         self.enableWindow()
 
     def disableWindow(self):

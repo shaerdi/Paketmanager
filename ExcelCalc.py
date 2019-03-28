@@ -1,15 +1,12 @@
-###############################################################################
-# Benoetigte Module
-###############################################################################
 import pickle
+from collections import defaultdict
 import numpy as np
 import pandas as pd
 import pathlib
 import xlsxwriter
-from collections import defaultdict
 
 class UIError(Exception):
-   pass
+    pass
 
 def convertLeistung(leistung):
     """Macht aus einer Zahl eine Buchstabenfolge (String)
@@ -21,20 +18,6 @@ def convertLeistung(leistung):
     except:
         return str(leistung)
 
-def getKategorie(group, kategorien):
-    """Sucht die Kategorie einer Gruppe
-    """
-    tarmedgroup = group[group.Leistungskategorie == 'Tarmed']
-    leistungen = tarmedgroup.Leistung.values
-    if not leistungen:
-        return 'OhneTarmed'
-
-    for k in kategorien:
-        if k in leistungen:
-            return k
-    return 'Restgruppe'
-
-
 def datenEinlesen(dateiname):
     """Liest ein Excel ein
 
@@ -42,22 +25,29 @@ def datenEinlesen(dateiname):
     eine Liste mit den Kategorien aus dem zweiten Sheet des Excels
 
     """
-    if not '.xls' in dateiname:
-        raise IOError("Datei hat nicht die Endung '.xls' oder '.xlsx'")
-    daten = pd.read_excel(
-        dateiname,
-        converters={'Leistung':convertLeistung},
-        )
-    try:
-        kategorien = pd.read_excel(
+    if '.xls' in dateiname:
+        daten = pd.read_excel(
             dateiname,
-            sheet_name=1,
-            converters={0:convertLeistung},
-            header=None,
+            converters={'Leistung':convertLeistung},
+        )
+        try:
+            kategorien = pd.read_excel(
+                dateiname,
+                sheet_name=1,
+                converters={0:convertLeistung},
+                header=None,
             )
-        kategorien = kategorien.values.flatten()
-    except IndexError:
+            kategorien = kategorien.values.flatten()
+        except IndexError:
+            kategorien = None
+    elif '.csv' in dateiname:
+        daten = pd.read_csv(
+            dateiname,
+            converters={'Leistung':convertLeistung},
+        )
         kategorien = None
+    else:
+        raise IOError("Datei hat nicht die Endung '.xls','.xlsx' oder '.csv'")
     return daten, kategorien
 
 def sheetSchreiben(sheetname, daten, writer):
@@ -78,6 +68,14 @@ def sheetSchreiben(sheetname, daten, writer):
     for zeile in graueZeilen:
         sheet.set_row(zeile, None, cellFormatGrey)
 
+def getKategorie(key, kategorien):
+    if len(key) == 0:
+        return 'OhneTarmed'
+    for k in kategorien:
+        if k in key:
+            return k
+    return 'Restgruppe'
+
 ###############################################################################
 # Hauptfunktion, geht alle Leistungen durch und schreibt sie in ein Excel
 ###############################################################################
@@ -86,90 +84,71 @@ def createPakete(daten, kategorien):
     :daten: Pandas objekt mit allen Daten
     :kategorien: Liste mit den Kategorien
     """
-
-    # Erster Durchgang:
-    # Die Daten werden nach FallDatum gruppiert, und jede Gruppe wird in die
-    # Pakete einsortiert.
-
     def buildKey(s):
         return ','.join(set(s))
 
-    Leistungen = daten[daten.Leistungskategorie == 'Tarmed'][['FallDatum','Leistung']]
-    keys = Leistungen.groupby('FallDatum').aggregate(buildKey)
+    leistungen = daten[daten.Leistungskategorie == 'Tarmed'][['FallDatum', 'Leistung']]
+    keys = leistungen.groupby('FallDatum').aggregate(buildKey)
     keys.rename({'Leistung': 'key'}, axis=1, inplace=True)
 
     daten = daten.join(keys, on='FallDatum')
     daten.fillna({'key':''}, inplace=True)
 
-    # for fd,g in daten.groupby('FallDatum'): 
-        # key = set(g[g.Leistungskategorie=='Tarmed'].Leistung)  
-        # daten.loc[g.index,'key'] = ",".join(key)
-
-    for i,(fd,g) in enumerate(daten.groupby('key')):
-        daten.loc[g.index, 'paketID'] = int(i)
-        daten.loc[g.index,'Anzahl'] = g.shape[0]
-
-
-    def getKat(key):
-        if len(key) == 0:
-            return 'OhneTarmed'
-        for k in kategorien:
-            if k in key:
-                return k
-        return 'Restgruppe'
-
-    daten['Kategorie'] = daten['key'].apply(getKat)
+    for i, (_, group) in enumerate(daten.groupby('key')):
+        daten.loc[group.index, 'paketID'] = int(i)
+        daten.loc[group.index, 'Anzahl'] = group.shape[0]
 
     return daten
 
 def getFirstGroup(groups):
-    for i,g in groups:
+    """Gibt die erste Gruppe eines Groupby Objektes zurueck"""
+    for i, g in groups:
         return g
 
 def writePaketeToExcel(daten, kategorien, filename):
-    #############################################
-    # Ab jetzt der Code um das Excel zu schreiben
-    #############################################
+    """ Schreibt die Daten in ein Excel, nach kategorien sortiert"""
 
-    # Pfad zur Resultatdatei
     fname = pathlib.Path(filename).with_suffix('.xlsx')
 
-    # Ordner erstellen, wenn es ihn noch nicht gibt
     if not fname.parent.exists():
         fname.parent.mkdir()
-        
-    # Excel erstellen
+
     writer = pd.ExcelWriter(str(fname), engine='xlsxwriter')
     workbook = writer.book
 
-    ## Daten Schreiben
-    # Rohdaten
-    daten.drop(['Kategorie'],axis=1).to_excel(
+    if kategorien is not None:
+        daten['Kategorie'] = daten['key'].apply(
+            lambda k: getKategorie(k, kategorien))
+
+        daten.drop(['Kategorie'], axis=1).to_excel(
             writer, sheet_name='Rohdaten', index=False
             )
 
-    # Alle Pakete, jeweils die erste Fallnummer im entsprechenden Paket
-    allePakete = pd.concat(sorted([
-            getFirstGroup(g[1].groupby('FallDatum',sort=False))
-            for g in daten.drop('Kategorie',axis=1).groupby('paketID',sort=False)
-            ],
-            key = lambda x : x.Anzahl.max(), reverse = True
-            ))
-    sheetSchreiben('AllePakete', allePakete, writer)
+        # Alle Pakete, jeweils die erste Fallnummer im entsprechenden Paket
+        allePakete = pd.concat(sorted([
+            getFirstGroup(g[1].groupby('FallDatum', sort=False))
+            for g in daten.drop('Kategorie', axis=1).groupby('paketID', sort=False)
+            ], key=lambda x : x.Anzahl.max(), reverse=True))
+        sheetSchreiben('AllePakete', allePakete, writer)
 
-    # Pro Kategorie
-    for kategorie in kategorien + ['Restgruppe','OhneTarmed']:
-        katData = daten[daten['Kategorie']==kategorie].drop('Kategorie',axis=1)
-        try:
-            katData = pd.concat(sorted([
-                getFirstGroup(g[1].groupby('FallDatum',sort=False))
-                for g in katData.groupby('paketID',sort=False)
-                ],
-                key = lambda x : x.Anzahl.max(), reverse = True
-                ))
-            sheetSchreiben(kategorie,katData,writer)
-        except ValueError:
-            pass
+        # Pro Kategorie
+        for kategorie in kategorien + ['Restgruppe', 'OhneTarmed']:
+            katData = daten[daten['Kategorie'] == kategorie].drop('Kategorie', axis=1)
+            try:
+                katData = pd.concat(sorted([
+                    getFirstGroup(g[1].groupby('FallDatum', sort=False))
+                    for g in katData.groupby('paketID', sort=False)
+                    ], key=lambda x: x.Anzahl.max(), reverse=True))
+                sheetSchreiben(kategorie, katData, writer)
+            except ValueError:
+                pass
+    else:
+        daten.to_excel(writer, sheet_name='Rohdaten', index=False)
+        allePakete = pd.concat(sorted([
+            getFirstGroup(g[1].groupby('FallDatum', sort=False))
+            for g in daten.groupby('paketID', sort=False)
+            ], key=lambda x: x.Anzahl.max(), reverse=True))
+        sheetSchreiben('AllePakete', allePakete, writer)
 
     workbook.close()
 
@@ -291,8 +270,15 @@ class Regel:
 
         ind = self._daten.dataframe.key.apply(erfuellt)
         self._erfuellt = self._daten.dataframe[ind]
-        self.anzahl = str(ind.sum)
+        self.anzahl = str(ind.sum())
 
+    def getAnzahlErfuellt(self):
+        """Gibt die Anzahl der Falldaten zurueck, die diese Regel erfuellen
+        :returns: Anzahl der Falldaten
+
+        """
+        return self.anzahl
+        
     def getErfuellt(self):
         """Gibt ein Dataframe zurueck, das alle Falldaten enthaelt, die diese
         Regel erfuellen.
@@ -409,40 +395,13 @@ class Regeln(ObserverSubject):
         with path.with_suffix('.tpf').open('wb') as f:
             pickle.dump(regelDict, f)
 
-    def loadFromFile(self, filename):
-        """Laedt die Regeln aus einem File
-
-        :filename: Filename
-        """
-        path = pathlib.Path(filename)
-        with path.with_suffix('.tpf').open('rb') as f:
-            regelnDict = pickle.load(f)
-
-        try:
-            self.regeln = []
-            for name, bedingungen in regelnDict.items():
-                neueRegel = Regel(name, self._excelDaten)
-                for leistung in bedingungen[Regel.UND]:
-                    neueRegel.addLeistung(leistung, Regel.UND)
-                for leistung in bedingungen[Regel.ODER]:
-                    neueRegel.addLeistung(leistung, Regel.ODER)
-                for leistung in bedingungen[Regel.NICHT]:
-                    neueRegel.addLeistung(leistung, Regel.NICHT)
-                self.regeln.append(neueRegel)
-        except AttributeError:
-            raise UIError("Fehler beim Laden der Regeln, ungültiges File")
-        except KeyError:
-            raise UIError("Fehler beim Laden der Regeln, ungültiges File")
-        self.notifyObserver()
-        self.updateRegel()
-
     def setAktiv(self, index):
         """Setzt die momentan aktive Regel
 
         :index: Index der neuen aktiven Regel
         """
         if index is None:
-            self._aktiveRegel = ''
+            self._aktiveRegel = None
         if 0 <= index < len(self.regeln):
             self._aktiveRegel = self.regeln[index]
         self.notifyObserver()
@@ -458,8 +417,19 @@ class Regeln(ObserverSubject):
 
     def removeLeistungenFromAktiverRegel(self, indices, typ):
         if self._aktiveRegel:
-            self._aktiveRegel.removeLeistung(name, typ)
+            for index in indices:
+                self._aktiveRegel.removeLeistung(index, typ)
             self.notifyObserver()
+
+    def getErfuelltAktiveRegel(self):
+        """Gibt die Anzahl der Pakete zurueck, die die aktive Regel erfuellen
+        :returns: Anzahl Pakete
+
+        """
+        if self._aktiveRegel:
+            return self._aktiveRegel.getAnzahlErfuellt()
+        else:
+            return '-'
 
 
 class ExcelDaten(ObserverSubject):
@@ -486,6 +456,7 @@ class ExcelDaten(ObserverSubject):
     def addKategorie(self, kategorie):
         """Fuegt eine Kategorie hinzu"""
         self._kategorien.add(kategorie)
+        self.notifyObserver()
 
     def calcUniqueLeistungen(self):
         """Berechnet eine Liste mit allen Leistungen im Excel"""
@@ -502,8 +473,10 @@ class ExcelDaten(ObserverSubject):
         """
         if self._leistungen is None:
             return []
-        ind = self._leistungen.str.contains(filterLeistung)
-        return self._leistungen[ind].values
+        if filterLeistung:
+            ind = self._leistungen.str.contains(filterLeistung)
+            return self._leistungen[ind].values
+        return self._leistungen
 
     def getAnzahlFalldaten(self):
         """Gibt die Anzahl Falldaten zurueck
@@ -516,17 +489,30 @@ class ExcelDaten(ObserverSubject):
         return 0
 
     def checkItem(self, label):
-        """Prueft, ob eine Bedingung in den Daten vorhanden ist
+        """Prueft, ob eine Leistung in den Daten vorhanden ist
 
-        :label: Name der Bedingung
+        :label: Name der Leistung
         :returns: True, wenn die Bedingung vorhanden ist
         """
         if self._dataframe is None:
             return False
         return label in self._leistungen.values
 
+    def clearKategorien(self):
+        """Loescht alle Kategorien"""
+        self._kategorien = set()
+
     def getKategorien(self):
         """Gibt die Kategorien als Liste zurueck
         :returns: Kategorien
         """
         return list(self._kategorien)
+
+    def removeKategorien(self, rows):
+        """Loescht die Kategorien"""
+        self._kategorien = [
+            k for i,k in enumerate(self._kategorien)
+            if i not in rows
+            ]
+        self.notifyObserver()
+
