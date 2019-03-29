@@ -688,7 +688,12 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
 
 
 if __name__ == '__main__':
-    app = QtWidgets.QApplication([])
+    appExists = False
+    try:
+        app
+        appExists = True
+    except NameError:
+        app = QtWidgets.QApplication([])
     application = TarmedPaketManagerApp()
     application.show()
-    sys.exit(app.exec())
+    app.exec_()
