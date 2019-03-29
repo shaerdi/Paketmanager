@@ -606,7 +606,7 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No ,)
         if reply == QtWidgets.QMessageBox.No:
             return
-        QtGui.QGuiApplication.quit()
+        self.close()
 
     def openExcel(self):
         """Laedt die Rohdaten"""
