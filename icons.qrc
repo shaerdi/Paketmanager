@@ -1,5 +1,6 @@
 <RCC>
   <qresource prefix="ToolBar">
+    <file>Bilder/network.svg</file>
     <file>Bilder/resource-calendar-insert.svg</file>
     <file>Bilder/application-exit.svg</file>
     <file>Bilder/list-remove.svg</file>

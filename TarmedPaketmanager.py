@@ -6,7 +6,35 @@ import pickle
 from PyQt5 import QtCore, QtGui, QtWidgets
 from ExcelCalc import datenEinlesen, createPakete, writePaketeToExcel
 from ExcelCalc import Regeln, ExcelDaten, Regel, UIError
-import MainWindow, LeistungswahldialogUI
+import MainWindow, LeistungswahldialogUI, Ueber
+
+VERSION = "0.9.0"
+BESCHREIBUNG = """
+Tarmed Paketmanager Version {}
+
+Copyright (c) 2019 Simon Härdi
+
+shaerdi@protonmail.ch
+
+Hiermit wird unentgeltlich jeder Person, die eine Kopie der Software und der zugehörigen Dokumentationen (die "Software") erhält, die Erlaubnis erteilt, sie uneingeschränkt zu nutzen, inklusive und ohne Ausnahme mit dem Recht, sie zu verwenden, zu kopieren, zu verändern, zusammenzufügen, zu veröffentlichen, zu verbreiten, zu unterlizenzieren und/oder zu verkaufen, und Personen, denen diese Software überlassen wird, diese Rechte zu verschaffen, unter den folgenden Bedingungen:
+
+Der obige Urheberrechtsvermerk und dieser Erlaubnisvermerk sind in allen Kopien oder Teilkopien der Software beizulegen.
+
+DIE SOFTWARE WIRD OHNE JEDE AUSDRÜCKLICHE ODER IMPLIZIERTE GARANTIE BEREITGESTELLT, EINSCHLIESSLICH DER GARANTIE ZUR BENUTZUNG FÜR DEN VORGESEHENEN ODER EINEM BESTIMMTEN ZWECK SOWIE JEGLICHER RECHTSVERLETZUNG, JEDOCH NICHT DARAUF BESCHRÄNKT. IN KEINEM FALL SIND DIE AUTOREN ODER COPYRIGHTINHABER FÜR JEGLICHEN SCHADEN ODER SONSTIGE ANSPRÜCHE HAFTBAR ZU MACHEN, OB INFOLGE DER ERFÜLLUNG EINES VERTRAGES, EINES DELIKTES ODER ANDERS IM ZUSAMMENHANG MIT DER SOFTWARE ODER SONSTIGER VERWENDUNG DER SOFTWARE ENTSTANDEN.
+""".format(VERSION)
+
+class UeberDialog(QtWidgets.QDialog):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self._uInterface = Ueber.Ui_Dialog()
+        self._uInterface.setupUi(self)
+        self._uInterface.text.setPlainText(BESCHREIBUNG)
+
+    @classmethod
+    def show(cls, parent):
+        dialog = cls(parent)
+        dialog.open()
+
 
 class ExcelReader(QtCore.QThread):
     """Thread, um ein Excel einzulesen"""
@@ -97,7 +125,7 @@ class InfoTable:
 
         item0 = QtGui.QStandardItem(name)
         item1 = QtGui.QStandardItem(valueFunc())
-        item1.setTextAlignment(QtCore.Qt.AlignRight)
+        item1.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
         self.model.appendRow([item0,item1])
 
     def update(self):
@@ -446,6 +474,11 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
         self._regelListe.neueRegel.connect(self.addRegel)
 
         self._kategorieModel.neueKategorie.connect(self.addKategorie)
+        uInter.action_uber.triggered.connect(self.showUeber)
+        
+    def showUeber(self):
+        """Oeffnet den UeberDialog"""
+        UeberDialog.show(self)
 
     def getExcelName(self):
         """Gibt den Namen des aktuellen Excels zurueck
