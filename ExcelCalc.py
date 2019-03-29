@@ -501,6 +501,7 @@ class ExcelDaten(ObserverSubject):
     def clearKategorien(self):
         """Loescht alle Kategorien"""
         self._kategorien = set()
+        self.notifyObserver()
 
     def getKategorien(self):
         """Gibt die Kategorien als Liste zurueck

@@ -1,0 +1,13 @@
+<RCC>
+  <qresource prefix="ToolBar">
+    <file>Bilder/resource-calendar-insert.svg</file>
+    <file>Bilder/application-exit.svg</file>
+    <file>Bilder/list-remove.svg</file>
+    <file>Bilder/list-remove-all.svg</file>
+    <file>Bilder/list-add.svg</file>
+    <file>Bilder/document-save.svg</file>
+    <file>Bilder/document-open.svg</file>
+    <file>Bilder/document-export.svg</file>
+    <file>Bilder/application-vnd.openxmlformats-officedocument.spreadsheetml.sheet.svg</file>
+  </qresource>
+</RCC>

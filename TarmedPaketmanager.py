@@ -6,7 +6,7 @@ import pickle
 from PyQt5 import QtCore, QtGui, QtWidgets
 from ExcelCalc import datenEinlesen, createPakete, writePaketeToExcel
 from ExcelCalc import Regeln, ExcelDaten, Regel, UIError
-from UI import MainWindow, LeistungswahldialogUI
+import MainWindow, LeistungswahldialogUI
 
 class ExcelReader(QtCore.QThread):
     """Thread, um ein Excel einzulesen"""
@@ -57,197 +57,6 @@ class ExcelPaketWriter(QtCore.QThread):
             returnValue['success'] = False
             returnValue['errMsg'] = str(error)
         self.signal.emit(returnValue)
-
-
-# class BedingungswahlDialog(wx.Dialog):
-    # def __init__(self, parent, id, title, daten):
-        # wx.Dialog.__init__(self, parent, id, title)
-        # self.daten = daten
-        # self.InitUI()
-        # self.SetList()
-
-    # def InitUI(self):
-        # vbox = wx.BoxSizer(wx.VERTICAL) 
-        # hbox1 = wx.BoxSizer(wx.HORIZONTAL)
-        # txt = wx.StaticText(self, label = "Neue Bedingung")
-        # hbox1.Add(txt,proportion=0,flag=wx.ALL,border=5)
-        # self.insertTxt = wx.TextCtrl(self)
-        # hbox1.Add(self.insertTxt,proportion=1,flag=wx.EXPAND)
-        # vbox.Add(hbox1, proportion=0, flag = wx.EXPAND|wx.TOP, border = 4) 
-
-        # self.helpList = wx.ListBox(self,
-                # style= wx.LB_SINGLE|wx.LB_NEEDED_SB,
-                # )
-        # vbox.Add(self.helpList, proportion=1, flag = wx.EXPAND|wx.ALL,border=5)
-
-        # sizer =  self.CreateButtonSizer(wx.OK|wx.CANCEL)
-        # vbox.Add(sizer, proportion=0, flag=wx.EXPAND|wx.ALL, border=5)
-        # self.SetSizer(vbox)
-        
-        # self.Bind(wx.EVT_LISTBOX, self.OnListboxClicked, self.helpList)
-        # self.Bind(wx.EVT_LISTBOX_DCLICK, self.OnListboxDoubleClicked, self.helpList)
-        # self.Bind(wx.EVT_TEXT, self.OnTextChanged, self.insertTxt)
-
-    # def OnTextChanged(self,event):
-        # self.SetList()
-
-    # def OnListboxDoubleClicked(self,event):
-        # self.OnListboxClicked(event)
-        # self.EndModal(wx.ID_OK)
-
-    # def OnListboxClicked(self,event):
-        # string = event.GetEventObject().GetStringSelection()
-        # self.insertTxt.ChangeValue(string)
-        
-    # def SetList(self):
-        # self.helpList.Clear()
-        # leistungen = self.daten.getLeistungen(self.insertTxt.GetValue())
-        # if not leistungen is None and not len(leistungen)==0:
-            # self.helpList.InsertItems(leistungen,0)
-
-    # def GetValue(self):
-        # return self.insertTxt.GetValue()
-
-
-# class SummaryPanel(wx.Panel):
-    # def __init__(self, *args, **kwargs):
-        # super().__init__(*args,**kwargs)
-        # self.InitUI()
-
-    # def InitUI(self):
-        # sizer = wx.FlexGridSizer(3, 2, 10,50)
-
-        # txt = wx.StaticText(self, label="Infos", style=wx.ALIGN_CENTRE_HORIZONTAL)
-        # sizer.Add(txt)
-        # sizer.Add(wx.StaticText(self))
-
-        # txt = wx.StaticText(self, label="Anzahl Falldaten:", style=wx.ALIGN_LEFT)
-        # sizer.Add(txt)
-
-        # self.anzahlPaketeTotal = wx.StaticText(self, label="0", style=wx.ALIGN_LEFT)
-        # sizer.Add(self.anzahlPaketeTotal)
-
-        # txt = wx.StaticText(self, label="Falldaten mit Bedingung:", style=wx.ALIGN_LEFT)
-        # sizer.Add(txt)
-
-        # self.anzahlPaketeBedingung = wx.StaticText(self, label="0", style=wx.ALIGN_LEFT)
-        # sizer.Add(self.anzahlPaketeBedingung)
-
-        # self.SetSizer(sizer)
-
-    # def updateTotal(self, num):
-        # self.anzahlPaketeTotal.SetLabel( str(num) )
-
-    # def updateBedingung(self, num):
-        # self.anzahlPaketeBedingung.SetLabel( str(num) )
-
-
-# class AnzeigeListe(wx.ListCtrl, wx.lib.mixins.listctrl.ListCtrlAutoWidthMixin):
-
-    # def __init__(self, parent, regeln, daten, *args, **kw):
-        # self._parent = parent
-        # self.regeln = regeln
-        # self.daten = daten
-        # titel = kw.pop('titel','')
-
-        # if 'style' not in kw:
-            # kw['style'] = wx.LC_REPORT|wx.LC_HRULES|wx.LC_VIRTUAL
-
-        # wx.ListCtrl.__init__(self, parent, *args, **kw)
-        # wx.lib.mixins.listctrl.ListCtrlAutoWidthMixin.__init__(self)
-
-        # self.InsertColumn(0, titel)
-
-    # def OnGetItemText(self, item, col):
-        # return self.items[item]
-
-
-# class RegelListe(AnzeigeListe):
-    # def __init__(self, parent, regeln, daten, *args, **kw):
-        # style = wx.LC_REPORT|wx.LC_HRULES|wx.LC_VIRTUAL|wx.LC_SINGLE_SEL
-        # AnzeigeListe.__init__(self, parent, regeln, daten, *args, style=style, **kw)
-        # self.Bind(wx.EVT_LIST_ITEM_ACTIVATED, self.onDoubleClick)
-        # self.Bind(wx.EVT_LIST_END_LABEL_EDIT, self.labelEdit)
-        # self.Bind(wx.EVT_LIST_ITEM_SELECTED, self.onSetFocus)
-        # regeln.registerObserver(self)
-        # self.update()
-
-    # def onSetFocus(self, event):
-        # index = event.GetIndex()
-        # self.regeln.setAktiv(index)
-
-    # def labelEdit(self, event):
-        # """Methode, die nach dem Editieren eines Labels aufgerufen wird"""
-        # newLabel = event.GetLabel()
-        # oldLabel = self.items[event.GetIndex()]
-        # self.regeln.rename_regel(oldLabel, newLabel)
-        # self.update()
-
-    # def onDoubleClick(self,event):
-        # """Methode, die bei einem Doppelklick aufgerufen wird"""
-        # self.EditLabel(event.GetIndex())
-
-    # def update(self):
-        # """Liest die Items neu ein"""
-        # if self.regeln is not None:
-            # self.items = [r.name for r in self.regeln.regeln]
-            # self.SetItemCount(len(self.regeln.regeln))
-
-    # def deleteSelected(self):
-        # """Loescht die selektierten Items """
-        # index = self.GetFirstSelected()
-        # self.regeln.removeRegel(index)
-
-
-# class BedingungsListe(AnzeigeListe):
-    # def __init__(self, parent, regeln, daten, *args, **kw):
-
-        # self._typ = kw.pop('typ')
-        # kw['titel'] = LIST_HEADER[self._typ]
-
-        # AnzeigeListe.__init__(self, parent, regeln, daten, *args, **kw)
-
-        # self.normalItem = wx.ListItemAttr()
-        # self.redItem = wx.ListItemAttr()
-        # self.redItem.SetBackgroundColour(wx.Colour(255,204,204))
-
-        # regeln.registerObserver(self)
-        # self.update()
-
-    # def update(self):
-        # """Setzt Listenitems neu
-        # """
-        # aktiveRegel = self.regeln.aktiveRegel
-        # if aktiveRegel is not None:
-            # self.items = aktiveRegel.getLeistungen(self._typ)
-            # self.SetItemCount(len(self.items))
-        # else:
-            # self.items = []
-            # self.SetItemCount(0)
-
-    # def OnGetItemAttr(self, item):
-        # """Prueft, ob ein Item in den Daten vorhanden ist
-
-        # :item: Index des zu pruefenden Items
-        # """
-        # if self.daten.checkItem(self.items[item]):
-            # return self.normalItem
-        # else:
-            # return self.redItem
-
-    # def deleteSelected(self):
-        # """Loescht die selektierten Items """
-        # index = self.GetFirstSelected()
-        # itemsToDelete = []
-        # while index >= 0:
-            # itemsToDelete.append(index)
-            # index = self.GetNextSelected(index)
-
-        # aktiveRegel = self.regeln.aktiveRegel
-        # if aktiveRegel is not None:
-            # for item in itemsToDelete:
-                # aktiveRegel.removeLeistung(index, self._typ)
-
 
 class InfoTable:
     def __init__(self):
@@ -596,14 +405,17 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
         uInter = self.uInterface
         uInter.actionRohdaten_laden.triggered.connect(self.openExcel)
         uInter.actionNeue_Kategorie.triggered.connect(self.addKategorie)
+        uInter.actionKategorien_l_schen.triggered.connect(self._excelDaten.clearKategorien)
         uInter.actionNeue_Regel.triggered.connect(self.addRegel)
         uInter.actionExcel_exportieren.triggered.connect(self.writeExcel)
         uInter.actionRegel_laden.triggered.connect(self.loadRegeln)
         uInter.actionRegeln_speichern.triggered.connect(self.writeRegeln)
+        uInter.actionRegeln_loeschen.triggered.connect(self._regelListe.clearRegeln)
+        uInter.actionNeue_Bedingung.triggered.connect(self.addLeistungToRegel)
+        self._regelListe.neueLeistung.connect(self.addLeistungToRegel)
         uInter.action_Exit.triggered.connect(self.quitApp)
 
         self._regelListe.neueRegel.connect(self.addRegel)
-        self._regelListe.neueLeistung.connect(self.addLeistungToRegel)
 
         self._kategorieModel.neueKategorie.connect(self.addKategorie)
 
