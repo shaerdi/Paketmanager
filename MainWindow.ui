@@ -36,6 +36,12 @@
          <property name="enabled">
           <bool>true</bool>
          </property>
+         <property name="minimumSize">
+          <size>
+           <width>400</width>
+           <height>200</height>
+          </size>
+         </property>
          <property name="frameShadow">
           <enum>QFrame::Plain</enum>
          </property>
@@ -47,6 +53,12 @@
          </property>
          <property name="dragDropOverwriteMode">
           <bool>false</bool>
+         </property>
+         <property name="alternatingRowColors">
+          <bool>true</bool>
+         </property>
+         <property name="selectionMode">
+          <enum>QAbstractItemView::NoSelection</enum>
          </property>
          <property name="wordWrap">
           <bool>false</bool>
@@ -137,6 +149,9 @@
            <height>16777215</height>
           </size>
          </property>
+         <property name="toolTip">
+          <string>Definierte Regeln</string>
+         </property>
         </widget>
        </item>
        <item>
@@ -158,6 +173,9 @@
            <width>100</width>
            <height>16777215</height>
           </size>
+         </property>
+         <property name="toolTip">
+          <string>Leistungen, die ALLE in einem Paket vorkommen müssen</string>
          </property>
          <property name="frameShadow">
           <enum>QFrame::Sunken</enum>
@@ -193,6 +211,9 @@
            <height>16777215</height>
           </size>
          </property>
+         <property name="toolTip">
+          <string>Leistungen, von denen EINE in einem Paket vorkommen muss</string>
+         </property>
          <property name="editTriggers">
           <set>QAbstractItemView::NoEditTriggers</set>
          </property>
@@ -223,6 +244,9 @@
            <width>100</width>
            <height>16777215</height>
           </size>
+         </property>
+         <property name="toolTip">
+          <string>Leistungen, von denen KEINE in einem Paket vorkommen darf</string>
          </property>
          <property name="editTriggers">
           <set>QAbstractItemView::NoEditTriggers</set>
@@ -380,6 +404,9 @@
    <property name="text">
     <string>Excel &amp;exportieren</string>
    </property>
+   <property name="toolTip">
+    <string>Excel mit Regeln exportieren</string>
+   </property>
   </action>
   <action name="action_Exit">
    <property name="icon">
@@ -402,6 +429,9 @@
    </property>
    <property name="text">
     <string>Neue Bedingung</string>
+   </property>
+   <property name="toolTip">
+    <string>Neue Bedingung für die aktuelle Regel</string>
    </property>
   </action>
   <action name="actionRegeln_loeschen">

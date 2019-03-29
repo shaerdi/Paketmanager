@@ -539,7 +539,10 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
             options=options
         )
         if fileName:
-            self._workerThread = ExcelRegelWriter(self, fileName, self._regelListe)
+            path = pathlib.Path(fileName)
+            if not path.suffix in ['.xls', 'xlsx']:
+                path = path.with_suffix('.xlsx')
+            self._workerThread = ExcelRegelWriter(self, path, self._regelListe)
             self._workerThread.signal.connect(self.finishWrite)
             self.disableWindow()
 
