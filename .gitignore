@@ -2,3 +2,5 @@
 /Resultate/
 /Rohdaten/
 __pycache__/
+*.xlsx
+*.tpf
