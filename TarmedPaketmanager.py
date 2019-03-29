@@ -58,6 +58,28 @@ class ExcelPaketWriter(QtCore.QThread):
             returnValue['errMsg'] = str(error)
         self.signal.emit(returnValue)
 
+class ExcelRegelWriter(QtCore.QThread):
+    """Thread, um ein Excel zu speichern"""
+
+    signal = QtCore.pyqtSignal(dict)
+
+    def __init__(self, parent, fname, regeln):
+        super().__init__()
+        self._parent = parent
+        self._fname = fname
+        self._regeln = regeln
+        self.start()
+
+    def run(self):
+        returnValue = {'success':False}
+        try:
+            bedingungen = self._regeln.getBedingungsliste()
+            bedingungen.to_excel(self._fname, index=False)
+            returnValue['success'] = True
+        except UIError as error:
+            returnValue['errMsg'] = str(error)
+        self.signal.emit(returnValue)
+
 class InfoTable:
     def __init__(self):
         self._getFuncs = []
@@ -252,6 +274,7 @@ class RegelListe(QtCore.QAbstractListModel):
         self.beginInsertRows(QtCore.QModelIndex(), nItems, nItems+1)
         self._regeln.addRegel(name)
         self.endInsertRows()
+        self._regelListView.setCurrentIndex(self.createIndex(nItems, 0))
 
     def deleteSelected(self):
         """Loescht das selektierte Item"""
@@ -342,7 +365,12 @@ class RegelListe(QtCore.QAbstractListModel):
         return self._regeln.getErfuelltAktiveRegel()
 
     def addLeistungToAktiverRegel(self, name, typ):
+        """Fuegt der aktiven Regel eine Leistung hinzu"""
         self._regeln.addLeistungToAktiverRegel(name, typ)
+
+    def getBedingungsliste(self):
+        """Gibt die Bedingungsliste zurueck"""
+        return self._regeln.getBedingungsliste()
 
 
 class TarmedPaketManagerApp(QtWidgets.QMainWindow):
@@ -414,7 +442,7 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
         uInter.actionNeue_Bedingung.triggered.connect(self.addLeistungToRegel)
         self._regelListe.neueLeistung.connect(self.addLeistungToRegel)
         uInter.action_Exit.triggered.connect(self.quitApp)
-
+        uInter.actionRegelExcel_exportieren.triggered.connect(self.writeRegelExcel)
         self._regelListe.neueRegel.connect(self.addRegel)
 
         self._kategorieModel.neueKategorie.connect(self.addKategorie)
@@ -452,13 +480,34 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
         options |= QtWidgets.QFileDialog.DontUseNativeDialog
         fileName, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
-            "Rohdaten laden",
+            "Excel speichern",
             "","Excel Files (*.xlsx *.xls)",
             options=options
         )
         if fileName:
             self._workerThread = ExcelPaketWriter(self, fileName, self._excelDaten)
             self._workerThread.signal.connect(self.finishReadExcel)
+            self.disableWindow()
+
+    def writeRegelExcel(self):
+        """Schreibt die Bedingungen in ein Excel"""
+        if self._excelDaten.dataframe is None:
+            errMsg = "Keine Daten vorhanden"
+            box = QtWidgets.QMessageBox.warning(self, "Warnung", errMsg,
+                QtWidgets.QMessageBox.Ok,)
+            return
+
+        options = QtWidgets.QFileDialog.Options()
+        options |= QtWidgets.QFileDialog.DontUseNativeDialog
+        fileName, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Excel speichern",
+            "","Excel Files (*.xlsx *.xls)",
+            options=options
+        )
+        if fileName:
+            self._workerThread = ExcelRegelWriter(self, fileName, self._regelListe)
+            self._workerThread.signal.connect(self.finishWrite)
             self.disableWindow()
 
     def finishWrite(self, result):
@@ -573,6 +622,33 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
         """Schaltet den Wartemodus aus"""
         self.setEnabled(True)
         QtWidgets.QApplication.restoreOverrideCursor()
+
+    # def saveRegelnToExcel(self, filePath):
+        # if self.daten is None:
+            # return
+        # datenListe = [self.applyRegelToData(regel) for regel in self.regeln]
+        # datenListe = [l.drop_duplicates(subset='FallDatum') for l in datenListe]
+        # daten = pd.concat(datenListe)
+        # daten.to_excel(filePath, index=False)
+
+    # def applyRegelToData(self, regel=None):
+        # if self.daten is None:
+            # return
+        # if regel is None:
+            # regel = self.aktiv
+        # aktiveRegel = self.regeln[regel or self.aktiv]
+        # def erfuellt(key):
+            # erfuelltAlle = all([ (    k in key) for k in aktiveRegel['and']])
+            # erfuelltOder = len(aktiveRegel['or']) == 0 or \
+                           # any([ (    k in key) for k in aktiveRegel['or']])
+            # erfuelltNot  = all([ (not k in key) for k in aktiveRegel['not']])
+            # return  erfuelltAlle and erfuelltOder and erfuelltNot
+
+        # ind = self.daten.key.apply(erfuellt)
+        # kopie = self.daten[ind].copy()
+        # kopie.drop_duplicates(subset='FallDatum',inplace=True)
+        # kopie['Regel'] = regel
+        # return kopie
 
 
 if __name__ == '__main__':
