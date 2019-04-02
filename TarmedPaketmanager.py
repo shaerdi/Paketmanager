@@ -433,7 +433,6 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
         self.setupInfoTable()
 
 
-
     def setupInfoTable(self):
         """Baut die InfoTable auf"""
 

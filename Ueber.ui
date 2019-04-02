@@ -37,7 +37,7 @@
         <string/>
        </property>
        <property name="backgroundVisible">
-        <bool>true</bool>
+        <bool>false</bool>
        </property>
       </widget>
      </item>
@@ -65,7 +65,7 @@
         <string/>
        </property>
        <property name="pixmap">
-        <pixmap resource="icons.qrc">:/ToolBar/Bilder/network.svg</pixmap>
+        <pixmap resource="icons.qrc">:/ToolBar/Bilder/icon.ico</pixmap>
        </property>
        <property name="scaledContents">
         <bool>true</bool>

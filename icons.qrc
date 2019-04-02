@@ -1,7 +1,7 @@
 <RCC>
   <qresource prefix="ToolBar">
-    <file>Bilder/resource-calendar-insert.svg</file>
     <file>Bilder/icon.ico</file>
+    <file>Bilder/resource-calendar-insert.svg</file>
     <file>Bilder/application-exit.svg</file>
     <file>Bilder/list-remove.svg</file>
     <file>Bilder/list-remove-all.svg</file>
