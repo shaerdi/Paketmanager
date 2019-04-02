@@ -15,7 +15,7 @@
   </property>
   <property name="windowIcon">
    <iconset resource="icons.qrc">
-    <normaloff>:/ToolBar/Bilder/network.svg</normaloff>:/ToolBar/Bilder/network.svg</iconset>
+    <normaloff>:/ToolBar/Bilder/icon.ico</normaloff>:/ToolBar/Bilder/icon.ico</iconset>
   </property>
   <property name="iconSize">
    <size>
