@@ -15,7 +15,7 @@ def convertLeistung(leistung):
     """
     try:
         return '{:07.4f}'.format(float(leistung))
-    except:
+    except ValueError:
         return str(leistung)
 
 def datenEinlesen(dateiname):
@@ -48,6 +48,13 @@ def datenEinlesen(dateiname):
         kategorien = None
     else:
         raise IOError("Datei hat nicht die Endung '.xls','.xlsx' oder '.csv'")
+
+    if not ('FallNr' in daten.columns and 'Datumsfeld' in daten.columns):
+        raise IOError("Die Spalten 'FallNr' und 'Datumsfeld' müssen vorhanden sein")
+
+    daten['FallDatum'] = pd.to_numeric(
+        daten['FallNr'].astype(str) + daten['Datumsfeld'].astype(str)
+        )
     return daten, kategorien
 
 def sheetSchreiben(sheetname, daten, writer):
@@ -84,15 +91,19 @@ def createPakete(daten, kategorien):
     :daten: Pandas objekt mit allen Daten
     :kategorien: Liste mit den Kategorien
     """
-    def buildKey(s):
-        return ','.join(set(s))
+    buildKey = lambda s: ','.join(set(s))
 
     leistungen = daten[daten.Leistungskategorie == 'Tarmed'][['FallDatum', 'Leistung']]
     keys = leistungen.groupby('FallDatum').aggregate(buildKey)
     keys.rename({'Leistung': 'key'}, axis=1, inplace=True)
 
+    alleLeistungen = daten[['FallDatum', 'Leistung']]
+    alleKeys = alleLeistungen.groupby('FallDatum').aggregate(buildKey)
+    alleKeys.rename({'Leistung': 'keyAlle'}, axis=1, inplace=True)
+
     daten = daten.join(keys, on='FallDatum')
-    daten.fillna({'key':''}, inplace=True)
+    daten = daten.join(alleKeys, on='FallDatum')
+    daten.fillna({'key':'', 'keyAlle':''}, inplace=True)
 
     for i, (_, group) in enumerate(daten.groupby('key')):
         daten.loc[group.index, 'paketID'] = int(i)
@@ -268,9 +279,9 @@ class Regel:
             erfuelltnot = all([(k not in key) for k in self._bedingungNicht])
             return  erfuelltalle and erfuelltoder and erfuelltnot
 
-        ind = self._daten.dataframe.key.apply(erfuellt)
+        ind = self._daten.dataframe.keyAlle.apply(erfuellt)
         self._erfuellt = self._daten.dataframe[ind]
-        self.anzahl = str(ind.sum())
+        self.anzahl = str(len(self._erfuellt.groupby('FallDatum')))
 
     def getAnzahlErfuellt(self):
         """Gibt die Anzahl der Falldaten zurueck, die diese Regel erfuellen
@@ -278,7 +289,7 @@ class Regel:
 
         """
         return self.anzahl
-        
+
     def getErfuellt(self):
         """Gibt ein Dataframe zurueck, das alle Falldaten enthaelt, die diese
         Regel erfuellen.
@@ -302,12 +313,11 @@ class Regel:
         """
         if typ == Regel.UND:
             return self._bedingungUnd
-        elif typ == Regel.ODER:
+        if typ == Regel.ODER:
             return self._bedingungOder
-        elif typ == Regel.NICHT:
+        if typ == Regel.NICHT:
             return self._bedingungNicht
-        else:
-            raise RuntimeError("Unbekannte Bedingung")
+        raise RuntimeError("Unbekannte Bedingung")
 
 class Regeln(ObserverSubject):
     """Klasse, die die Regeln speichert"""
@@ -391,9 +401,14 @@ class Regeln(ObserverSubject):
         regelDict = {}
         for regel in self.regeln:
             regelDict[regel.name] = regel.getDict()
-
-        with path.with_suffix('.tpf').open('wb') as f:
-            pickle.dump(regelDict, f)
+        head = {Regel.UND: 'UND', Regel.NICHT: 'NICHT', Regel.ODER: 'ODER'}
+        regeln = {(name, head[key]): pd.Series(values)
+            for name, innerDict in regelDict.items() 
+            for key, values in innerDict.items()
+            }
+        regeln = pd.DataFrame(regeln)
+        regeln.columns.names = ['Regelname','Typ']
+        regeln.to_excel(path)
 
     def setAktiv(self, index):
         """Setzt die momentan aktive Regel
@@ -460,9 +475,7 @@ class ExcelDaten(ObserverSubject):
 
     def calcUniqueLeistungen(self):
         """Berechnet eine Liste mit allen Leistungen im Excel"""
-        leistungen = self._dataframe[
-            self._dataframe['Leistungskategorie'] == 'Tarmed'
-            ]['Leistung']
+        leistungen = self._dataframe['Leistung']
         self._leistungen = leistungen.drop_duplicates()
 
     def getLeistungen(self, filterLeistung=None):

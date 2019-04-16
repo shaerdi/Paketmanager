@@ -3,6 +3,7 @@
 import sys
 import pathlib
 import pickle
+import pandas as pd
 from PyQt5 import QtCore, QtGui, QtWidgets
 from ExcelCalc import datenEinlesen, createPakete, writePaketeToExcel
 from ExcelCalc import Regeln, ExcelDaten, Regel, UIError
@@ -355,24 +356,20 @@ class RegelListe(QtCore.QAbstractListModel):
         self.endRemoveRows()
 
     def loadRegelnFromFile(self, filename):
-        self.clearRegeln()
-
-        path = pathlib.Path(filename)
-        with path.with_suffix('.tpf').open('rb') as f:
-            regelnDict = pickle.load(f)
-
         try:
+            regelnDF = pd.read_excel(filename, header=[0, 1])
             regeln = []
-            for name, bedingungen in regelnDict.items():
+            for name in regelnDF.columns.get_level_values(0).unique():
                 neueRegel = Regel(name, self._regeln._excelDaten)
-                for leistung in bedingungen[Regel.UND]:
-                    neueRegel.addLeistung(leistung, Regel.UND)
-                for leistung in bedingungen[Regel.ODER]:
-                    neueRegel.addLeistung(leistung, Regel.ODER)
-                for leistung in bedingungen[Regel.NICHT]:
-                    neueRegel.addLeistung(leistung, Regel.NICHT)
+                for leistung in regelnDF[name]['UND'].dropna().values:
+                    neueRegel.addLeistung(str(leistung), Regel.UND)
+                for leistung in regelnDF[name]['ODER'].dropna().values:
+                    neueRegel.addLeistung(str(leistung), Regel.ODER)
+                for leistung in regelnDF[name]['NICHT'].dropna().values:
+                    neueRegel.addLeistung(str(leistung), Regel.NICHT)
                 regeln.append(neueRegel)
 
+            self.clearRegeln()
             self.beginInsertRows(QtCore.QModelIndex(), 0, len(regeln))
             self._regeln.regeln = regeln
             self.endInsertRows()
@@ -565,11 +562,13 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
         fileName, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "Speichern unter",
-            "", "TPF file (*.tpf)",
+            "","Excel Files (*.xlsx *.xls)",
             options=options
         )
         if fileName:
-            path = pathlib.Path(fileName).with_suffix('.tpf')
+            path = pathlib.Path(fileName)
+            if not '.xls' in path.suffix:
+                path = path.with_suffix('.xlsx')
             self._regelListe.saveRegelnToFile(path)
 
     def loadRegeln(self):
@@ -579,7 +578,7 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
         fileName, _ = QtWidgets.QFileDialog.getOpenFileName(
             self,
             "Regeln laden",
-            "", "TPF file (*.tpf)",
+            "","Excel Files (*.xlsx *.xls)",
             options=options
         )
         if fileName:
@@ -657,33 +656,6 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
         """Schaltet den Wartemodus aus"""
         self.setEnabled(True)
         QtWidgets.QApplication.restoreOverrideCursor()
-
-    # def saveRegelnToExcel(self, filePath):
-        # if self.daten is None:
-            # return
-        # datenListe = [self.applyRegelToData(regel) for regel in self.regeln]
-        # datenListe = [l.drop_duplicates(subset='FallDatum') for l in datenListe]
-        # daten = pd.concat(datenListe)
-        # daten.to_excel(filePath, index=False)
-
-    # def applyRegelToData(self, regel=None):
-        # if self.daten is None:
-            # return
-        # if regel is None:
-            # regel = self.aktiv
-        # aktiveRegel = self.regeln[regel or self.aktiv]
-        # def erfuellt(key):
-            # erfuelltAlle = all([ (    k in key) for k in aktiveRegel['and']])
-            # erfuelltOder = len(aktiveRegel['or']) == 0 or \
-                           # any([ (    k in key) for k in aktiveRegel['or']])
-            # erfuelltNot  = all([ (not k in key) for k in aktiveRegel['not']])
-            # return  erfuelltAlle and erfuelltOder and erfuelltNot
-
-        # ind = self.daten.key.apply(erfuellt)
-        # kopie = self.daten[ind].copy()
-        # kopie.drop_duplicates(subset='FallDatum',inplace=True)
-        # kopie['Regel'] = regel
-        # return kopie
 
 
 if __name__ == '__main__':
