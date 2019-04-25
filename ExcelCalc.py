@@ -47,13 +47,19 @@ def datenEinlesen(dateiname):
         )
         kategorien = None
     else:
-        raise IOError("Datei hat nicht die Endung '.xls','.xlsx' oder '.csv'")
+        raise UIError("Datei hat nicht die Endung '.xls','.xlsx' oder '.csv'")
 
-    if not ('FallNr' in daten.columns and 'Datumsfeld' in daten.columns):
-        raise IOError("Die Spalten 'FallNr' und 'Datumsfeld' müssen vorhanden sein")
+    benoetigteSpalten = ['FallNr', 'Datumsfeld', 'Leistungskategorie']
+    fehlerMeldung = "Die Spalte {} muss in den Rohdaten vorhanden sein"
+    for spalte in benoetigteSpalten:
+        if not spalte in daten.columns:
+            raise UIError(fehlerMeldung.format(spalte))
 
+    # Serial Date Format von Excel sind Tage seit dem 01.01.1900
+    startDate = pd.datetime(1900,1,1) 
+    serialDate = (daten['Datumsfeld'] - startDate).dt.days
     daten['FallDatum'] = pd.to_numeric(
-        daten['FallNr'].astype(str) + daten['Datumsfeld'].astype(str)
+        daten['FallNr'].astype(str) + serialDate.astype(str)
         )
     return daten, kategorien
 
