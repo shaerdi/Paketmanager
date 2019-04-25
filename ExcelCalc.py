@@ -49,7 +49,7 @@ def datenEinlesen(dateiname):
     else:
         raise UIError("Datei hat nicht die Endung '.xls','.xlsx' oder '.csv'")
 
-    benoetigteSpalten = ['FallNr', 'Datumsfeld', 'Leistungskategorie']
+    benoetigteSpalten = ['FallNr', 'Datumsfeld', 'Tarifgruppe', 'Leistung']
     fehlerMeldung = "Die Spalte {} muss in den Rohdaten vorhanden sein"
     for spalte in benoetigteSpalten:
         if not spalte in daten.columns:
@@ -99,7 +99,7 @@ def createPakete(daten, kategorien):
     """
     buildKey = lambda s: ','.join(set(s))
 
-    leistungen = daten[daten.Leistungskategorie == 'Tarmed'][['FallDatum', 'Leistung']]
+    leistungen = daten[daten['Tarifgruppe'].str.contains('TARMED')][['FallDatum', 'Leistung']]
     keys = leistungen.groupby('FallDatum').aggregate(buildKey)
     keys.rename({'Leistung': 'key'}, axis=1, inplace=True)
 
