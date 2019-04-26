@@ -113,7 +113,7 @@ def createPakete(daten, kategorien):
 
     for i, (_, group) in enumerate(daten.groupby('key')):
         daten.loc[group.index, 'paketID'] = int(i)
-        daten.loc[group.index, 'Anzahl'] = group.shape[0]
+        daten.loc[group.index, 'Anzahl'] = group['FallDatum'].drop_duplicates().shape[0]
 
     return daten
 
