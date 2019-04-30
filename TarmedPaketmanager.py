@@ -199,7 +199,11 @@ class Leistungswahldialog(QtWidgets.QDialog):
         for t, button in self._radioButtons.items():
             if button.isChecked():
                 typ = t
-        return self._neueLeistung.text(), typ, self.ok
+        liste = self._uInterface.listView_Vorschlaege
+        selection = liste.selectionModel().selectedIndexes()
+        rows = [index.data() for index in selection]
+        values = rows or [self._neueLeistung.text()]
+        return values, typ, self.ok
 
 class KategorieModel(QtCore.QObject):
     neueKategorie = QtCore.pyqtSignal()
@@ -493,9 +497,10 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
         dialog = Leistungswahldialog(self, self._excelDaten, -1)
         dialog.exec_()
         dialog.show()
-        name, typ, ok = dialog.getValue()
+        values, typ, ok = dialog.getValue()
         if ok:
-            self._excelDaten.addKategorie(name)
+            for name in values:
+                self._excelDaten.addKategorie(name)
 
     def writeExcel(self):
         """Schreibt die Pakete in ein Excel"""
@@ -594,9 +599,10 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
             dialog = Leistungswahldialog(self, self._excelDaten, typ)
             dialog.exec_()
             dialog.show()
-            name, typ, ok = dialog.getValue()
+            values, typ, ok = dialog.getValue()
             if ok:
-                self._regelListe.addLeistungToAktiverRegel(name, typ)
+                for name in values:
+                    self._regelListe.addLeistungToAktiverRegel(name, typ)
 
     def quitApp(self):
         reply = QtWidgets.QMessageBox.question(self, "Beenden",
