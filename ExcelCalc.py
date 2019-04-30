@@ -404,17 +404,18 @@ class Regeln(ObserverSubject):
         :filename: Filename
         """
         path = pathlib.Path(filename)
-        regelDict = {}
+        head = {Regel.UND: 'UND', Regel.ODER: 'ODER', Regel.NICHT: 'NICHT'}
+        regelDataFrames = []
         for regel in self.regeln:
-            regelDict[regel.name] = regel.getDict()
-        head = {Regel.UND: 'UND', Regel.NICHT: 'NICHT', Regel.ODER: 'ODER'}
-        regeln = {(name, head[key]): pd.Series(values)
-            for name, innerDict in regelDict.items() 
-            for key, values in innerDict.items()
-            }
-        regeln = pd.DataFrame(regeln)
-        regeln.columns.names = ['Regelname','Typ']
-        regeln.to_excel(path)
+            regelDict = regel.getDict()
+            regelDF = pd.DataFrame(
+                {head[i]: pd.Series(regelDict[i]) for i in head}
+                )
+            regelDF['Name'] = regel.name
+            regelDataFrames.append(regelDF)
+        regeln = pd.concat(regelDataFrames)
+        columns = ['Name'] + list(head.values())
+        regeln.to_excel(path, index=False, columns=columns)
 
     def setAktiv(self, index):
         """Setzt die momentan aktive Regel

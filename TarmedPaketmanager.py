@@ -357,15 +357,15 @@ class RegelListe(QtCore.QAbstractListModel):
 
     def loadRegelnFromFile(self, filename):
         try:
-            regelnDF = pd.read_excel(filename, header=[0, 1])
+            regelnDF = pd.read_excel(filename)
             regeln = []
-            for name in regelnDF.columns.get_level_values(0).unique():
+            for name, lists in regelnDF.groupby('Name'):
                 neueRegel = Regel(name, self._regeln._excelDaten)
-                for leistung in regelnDF[name]['UND'].dropna().values:
+                for leistung in lists['UND'].dropna().values:
                     neueRegel.addLeistung(str(leistung), Regel.UND)
-                for leistung in regelnDF[name]['ODER'].dropna().values:
+                for leistung in lists['ODER'].dropna().values:
                     neueRegel.addLeistung(str(leistung), Regel.ODER)
-                for leistung in regelnDF[name]['NICHT'].dropna().values:
+                for leistung in lists['NICHT'].dropna().values:
                     neueRegel.addLeistung(str(leistung), Regel.NICHT)
                 regeln.append(neueRegel)
 
