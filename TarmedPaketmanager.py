@@ -300,6 +300,11 @@ class RegelListe(QtCore.QAbstractListModel):
                         item.setForeground(self._redBrush)
                     model.appendRow(item)
                 self._bedingungsListViews[typ].setModel(model)
+        else:
+            for typ in [Regel.UND, Regel.ODER, Regel.NICHT]:
+                model = QtGui.QStandardItemModel()
+                self._bedingungsListViews[typ].setModel(model)
+
 
     def addRegel(self, name):
         """Fuegt eine neue Regel hinzu"""
@@ -358,6 +363,7 @@ class RegelListe(QtCore.QAbstractListModel):
         self.beginRemoveRows(QtCore.QModelIndex(), 0, nItems)
         self._regeln.clearRegeln()
         self.endRemoveRows()
+        self.update()
 
     def loadRegelnFromFile(self, filename):
         try:
