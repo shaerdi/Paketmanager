@@ -460,7 +460,7 @@ class ExcelDaten(ObserverSubject):
     def __init__(self):
         super().__init__()
         self._dataframe = None
-        self._kategorien = set()
+        self._kategorien = []
         self._leistungen = None
 
     @property
@@ -477,8 +477,9 @@ class ExcelDaten(ObserverSubject):
 
     def addKategorie(self, kategorie):
         """Fuegt eine Kategorie hinzu"""
-        self._kategorien.add(kategorie)
-        self.notifyObserver()
+        if not kategorie in self._kategorien:
+            self._kategorien.append(kategorie)
+            self.notifyObserver()
 
     def calcUniqueLeistungen(self):
         """Berechnet eine Liste mit allen Leistungen im Excel"""
@@ -520,20 +521,19 @@ class ExcelDaten(ObserverSubject):
 
     def clearKategorien(self):
         """Loescht alle Kategorien"""
-        self._kategorien = set()
+        self._kategorien = []
         self.notifyObserver()
 
     def getKategorien(self):
         """Gibt die Kategorien als Liste zurueck
         :returns: Kategorien
         """
-        return list(self._kategorien)
+        return self._kategorien
 
     def removeKategorien(self, rows):
         """Loescht die Kategorien"""
         self._kategorien = [
-            k for i,k in enumerate(self._kategorien)
+            k for i, k in enumerate(self._kategorien)
             if i not in rows
             ]
         self.notifyObserver()
-
