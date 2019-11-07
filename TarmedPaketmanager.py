@@ -367,7 +367,7 @@ class RegelListe(QtCore.QAbstractListModel):
 
     def loadRegelnFromFile(self, filename):
         try:
-            regelnDF = pd.read_excel(filename)
+            regelnDF = pd.read_excel(filename, dtype=object)
             regeln = []
             for name, lists in regelnDF.groupby('Name'):
                 neueRegel = Regel(name, self._regeln._excelDaten)
