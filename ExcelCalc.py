@@ -226,6 +226,7 @@ class Regel:
         :bedingungs_art: Regel.UND, ODER oder NICHT
         """
 
+        newItem = convertLeistung(newItem)
         if typ == Regel.UND:
             self._bedingungUnd.append(newItem)
         elif typ == Regel.ODER:
