@@ -297,6 +297,18 @@ class Regel:
         """
         return self.anzahl
 
+    def moveUNDBedingungToTop(self, dataframe):
+        """Wenn die Regel eine UND Bedingung enhaelt, wird eine Zeile die diese
+        Bedingung erfuellt an die erste Stelle des dataframe geschoben"""
+        if self._bedingungUnd:
+            bedingung = self._bedingungUnd[0]
+            inds = dataframe.keyAlle.str.contains(bedingung)
+            inds = inds.to_numpy().nonzero()[0]
+            if inds.size > 0:
+                swap0, swap1 = dataframe.iloc[0].copy(), dataframe.iloc[inds[0]].copy()
+                dataframe.iloc[0], dataframe.iloc[inds[0]] = swap1, swap0
+        return dataframe
+
     def getErfuellt(self):
         """Gibt ein Dataframe zurueck, das alle Falldaten enthaelt, die diese
         Regel erfuellen.
@@ -306,6 +318,7 @@ class Regel:
         try:
             kopie = self._erfuellt.copy()
             kopie['Regel'] = self.name
+            kopie = self.moveUNDBedingungToTop(kopie)
             return kopie
         except AttributeError:
             spalten = self._daten.dataframe.columns
