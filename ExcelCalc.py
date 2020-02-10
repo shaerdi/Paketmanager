@@ -303,7 +303,7 @@ class Regel:
         if self._bedingungUnd:
             bedingung = self._bedingungUnd[0]
             inds = dataframe.keyAlle.str.contains(bedingung)
-            inds = inds.to_numpy().nonzero()[0]
+            inds = np.array(inds).nonzero()[0]
             if inds.size > 0:
                 swap0, swap1 = dataframe.iloc[0].copy(), dataframe.iloc[inds[0]].copy()
                 dataframe.iloc[0], dataframe.iloc[inds[0]] = swap1, swap0
@@ -321,7 +321,7 @@ class Regel:
             kopie = self.moveUNDBedingungToTop(kopie)
             return kopie
         except AttributeError:
-            spalten = self._daten.dataframe.columns
+            spalten = list(self._daten.dataframe.columns)
             spalten.append('Regel')
             return pd.DataFrame(columns=spalten)
 
