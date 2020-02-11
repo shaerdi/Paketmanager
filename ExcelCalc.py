@@ -58,9 +58,10 @@ def datenEinlesen(dateiname):
     # Serial Date Format von Excel sind Tage seit dem 01.01.1900
     startDate = pd.datetime(1900,1,1) 
     serialDate = (daten['Datumsfeld'] - startDate).dt.days
-    daten['FallDatum'] = pd.to_numeric(
-        daten['FallNr'].astype(str) + serialDate.astype(str)
-        )
+    if not 'FallDatum' in daten.columns:
+        daten['FallDatum'] = pd.to_numeric(
+            daten['FallNr'].astype(str) + serialDate.astype(str)
+            )
     return daten, kategorien
 
 def sheetSchreiben(sheetname, daten, writer):
