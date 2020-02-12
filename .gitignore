@@ -4,3 +4,4 @@
 __pycache__/
 *.xlsx
 *.tpf
+Paketmanager/UI/*py

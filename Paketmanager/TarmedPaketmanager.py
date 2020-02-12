@@ -5,9 +5,9 @@ import pathlib
 import pickle
 import pandas as pd
 from PyQt5 import QtCore, QtGui, QtWidgets
-from ExcelCalc import datenEinlesen, createPakete, writePaketeToExcel
-from ExcelCalc import Regeln, ExcelDaten, Regel, UIError
-import MainWindow, LeistungswahldialogUI, Ueber
+from .ExcelCalc import datenEinlesen, createPakete, writePaketeToExcel
+from .ExcelCalc import Regeln, ExcelDaten, Regel, UIError
+from .UI import MainWindow, LeistungswahldialogUI, Ueber
 
 VERSION = "0.9.0"
 BESCHREIBUNG = """
@@ -439,6 +439,7 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
         self.setupSlots()
         self.setupInfoTable()
 
+        self.show()
 
     def setupInfoTable(self):
         """Baut die InfoTable auf"""
