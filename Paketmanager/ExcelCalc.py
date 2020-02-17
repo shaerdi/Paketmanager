@@ -211,11 +211,9 @@ class Regel:
         self._erfuellt = None
 
     def validateTyp(self, typ):
-        """Ueberprueft, ob der Typ ein gueltiger Regel-Typ ist
-        
-        :returns: True wenn gueltig
-        """
-        return typ in [Regel.UND, Regel.ODER, Regel.NICHT]
+        """Ueberprueft, ob der Typ ein gueltiger Regel-Typ ist"""
+        if not typ in [Regel.UND, Regel.ODER, Regel.NICHT]:
+            raise RuntimeError("Unbekannte Bedingung")
 
     def getDict(self):
         """Erstellt ein Dict aus den Bedingungen dieser Regel
@@ -232,11 +230,9 @@ class Regel:
         :bedingungs_art: Regel.UND, ODER oder NICHT
         """
 
+        self.validateTyp(typ)
         newItem = convertLeistung(newItem)
-        try:
-            self._bedingungen[typ].append(newItem)
-        except KeyError:
-            raise RuntimeError("Unbekannte Bedingung")
+        self._bedingungen[typ].append(newItem)
         self.update()
 
     def removeLeistung(self, index, typ):
@@ -246,10 +242,8 @@ class Regel:
         :bedingungs_art: Regel.UND, ODER oder NICHT
         """
 
-        try:
-            del self._bedingungen[typ][index]
-        except KeyError:
-            raise RuntimeError("Unbekannte Bedingung")
+        self.validateTyp(typ)
+        del self._bedingungen[typ][index]
         self.update()
 
     def clearItems(self, typ):
@@ -259,10 +253,8 @@ class Regel:
         :bedingungs_art: Regel.UND, ODER oder NICHT
         """
 
-        try:
-            self._bedingungen[typ] = []
-        except KeyError:
-            raise RuntimeError("Unbekannte Bedingung")
+        self.validateTyp(typ)
+        self._bedingungen[typ] = []
         self.update()
 
     def update(self):
@@ -325,10 +317,8 @@ class Regel:
         :typ: Regel.UND, Regel.ODER oder Regel.NICHT
         :returns: Liste mit Leistungen
         """
-        try:
-            return self._bedingungen[typ]
-        except KeyError:
-            raise RuntimeError("Unbekannte Bedingung")
+        self.validateTyp(typ)
+        return self._bedingungen[typ]
 
 class Regeln(ObserverSubject):
     """Klasse, die die Regeln speichert"""
