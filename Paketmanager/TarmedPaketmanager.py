@@ -9,11 +9,11 @@ from .ExcelCalc import datenEinlesen, createPakete, writePaketeToExcel
 from .ExcelCalc import Regeln, ExcelDaten, Regel, UIError
 from .UI import MainWindow, LeistungswahldialogUI, Ueber
 
-VERSION = "0.9.0"
+VERSION = "0.9.1"
 BESCHREIBUNG = """
 Tarmed Paketmanager Version {}
 
-Copyright (c) 2019 Simon Härdi
+Copyright (c) 2020 Simon Härdi
 
 shaerdi@protonmail.ch
 
