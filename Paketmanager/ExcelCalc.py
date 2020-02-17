@@ -201,12 +201,21 @@ class Regel:
 
     def __init__(self, name, daten):
         self.name = name
-        self._bedingungUnd = []
-        self._bedingungOder = []
-        self._bedingungNicht = []
+        self._bedingungen = {
+            Regel.UND: [],
+            Regel.ODER : [],
+            Regel.NICHT : [],
+            }
         self.anzahl = '-'
         self._daten = daten
         self._erfuellt = None
+
+    def validateTyp(self, typ):
+        """Ueberprueft, ob der Typ ein gueltiger Regel-Typ ist
+        
+        :returns: True wenn gueltig
+        """
+        return typ in [Regel.UND, Regel.ODER, Regel.NICHT]
 
     def getDict(self):
         """Erstellt ein Dict aus den Bedingungen dieser Regel
@@ -214,11 +223,7 @@ class Regel:
         :returns: Dictionary mit den Eintraegen UND, ODER und NICHT
 
         """
-        return {
-            Regel.UND: self._bedingungUnd,
-            Regel.ODER : self._bedingungOder,
-            Regel.NICHT : self._bedingungNicht,
-        }
+        return self._bedingungen
 
     def addLeistung(self, newItem, typ):
         """Fuegt eine neue Leistung zur einer Liste hinzu
@@ -228,13 +233,9 @@ class Regel:
         """
 
         newItem = convertLeistung(newItem)
-        if typ == Regel.UND:
-            self._bedingungUnd.append(newItem)
-        elif typ == Regel.ODER:
-            self._bedingungOder.append(newItem)
-        elif typ == Regel.NICHT:
-            self._bedingungNicht.append(newItem)
-        else:
+        try:
+            self._bedingungen[typ].append(newItem)
+        except KeyError:
             raise RuntimeError("Unbekannte Bedingung")
         self.update()
 
@@ -245,13 +246,9 @@ class Regel:
         :bedingungs_art: Regel.UND, ODER oder NICHT
         """
 
-        if typ == Regel.UND:
-            del self._bedingungUnd[index]
-        elif typ == Regel.ODER:
-            del self._bedingungOder[index]
-        elif typ == Regel.NICHT:
-            del self._bedingungNicht[index]
-        else:
+        try:
+            del self._bedingungen[typ][index]
+        except KeyError:
             raise RuntimeError("Unbekannte Bedingung")
         self.update()
 
@@ -262,13 +259,9 @@ class Regel:
         :bedingungs_art: Regel.UND, ODER oder NICHT
         """
 
-        if typ == Regel.UND:
-            self._bedingungUnd = []
-        elif typ == Regel.ODER:
-            self._bedingungOder = []
-        elif typ == Regel.NICHT:
-            self._bedingungNicht = []
-        else:
+        try:
+            self._bedingungen[typ] = []
+        except KeyError:
             raise RuntimeError("Unbekannte Bedingung")
         self.update()
 
@@ -281,10 +274,10 @@ class Regel:
 
         def erfuellt(key):
             """Checkt, ob ein Key diese Regel erfuellt"""
-            erfuelltalle = all([(k in key) for k in self._bedingungUnd])
-            erfuelltoder = len(self._bedingungOder) == 0 or \
-                           any([(k in key) for k in self._bedingungOder])
-            erfuelltnot = all([(k not in key) for k in self._bedingungNicht])
+            erfuelltalle = all([(k in key) for k in self._bedingungen[Regel.UND]])
+            erfuelltoder = len(self._bedingungen[Regel.ODER]) == 0 or \
+                           any([(k in key) for k in self._bedingungen[Regel.ODER]])
+            erfuelltnot = all([(k not in key) for k in self._bedingungen[Regel.NICHT]])
             return  erfuelltalle and erfuelltoder and erfuelltnot
 
         ind = self._daten.dataframe.keyAlle.apply(erfuellt)
@@ -301,8 +294,8 @@ class Regel:
     def moveUNDBedingungToTop(self, dataframe):
         """Wenn die Regel eine UND Bedingung enhaelt, wird eine Zeile die diese
         Bedingung erfuellt an die erste Stelle des dataframe geschoben"""
-        if self._bedingungUnd:
-            bedingung = self._bedingungUnd[0]
+        if self._bedingungen[Regel.UND]:
+            bedingung = self._bedingungen[Regel.UND][0]
             inds = dataframe.keyAlle.str.contains(bedingung)
             inds = np.array(inds).nonzero()[0]
             if inds.size > 0:
@@ -332,13 +325,10 @@ class Regel:
         :typ: Regel.UND, Regel.ODER oder Regel.NICHT
         :returns: Liste mit Leistungen
         """
-        if typ == Regel.UND:
-            return self._bedingungUnd
-        if typ == Regel.ODER:
-            return self._bedingungOder
-        if typ == Regel.NICHT:
-            return self._bedingungNicht
-        raise RuntimeError("Unbekannte Bedingung")
+        try:
+            return self._bedingungen[typ]
+        except KeyError:
+            raise RuntimeError("Unbekannte Bedingung")
 
 class Regeln(ObserverSubject):
     """Klasse, die die Regeln speichert"""
