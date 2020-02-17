@@ -243,7 +243,13 @@ class Regel:
         """
 
         self.validateTyp(typ)
-        del self._bedingungen[typ][index]
+        try: 
+            self._bedingungen[typ] = [
+                    x for i,x in enumerate(self._bedingungen[typ])
+                    if i not in index
+                    ]
+        except TypeError: # index nicht iterierbar
+            del self._bedingungen[typ][index]
         self.update()
 
     def clearItems(self, typ):
@@ -434,8 +440,7 @@ class Regeln(ObserverSubject):
 
     def removeLeistungenFromAktiverRegel(self, indices, typ):
         if self._aktiveRegel:
-            for index in indices:
-                self._aktiveRegel.removeLeistung(index, typ)
+            self._aktiveRegel.removeLeistung(indices, typ)
             self.notifyObserver()
 
     def getErfuelltAktiveRegel(self):
