@@ -126,7 +126,7 @@ def getFirstGroup(groups):
 def writePaketeToExcel(daten, kategorien, filename):
     """ Schreibt die Daten in ein Excel, nach kategorien sortiert"""
 
-    fname = pathlib.Path(filename).with_suffix('.xlsx')
+    fname = pathlib.Path(filename)
 
     if not fname.parent.exists():
         fname.parent.mkdir()
@@ -414,6 +414,8 @@ class Regeln(ObserverSubject):
                 )
             regelDF['Name'] = regel.name
             regelDataFrames.append(regelDF)
+        if not regelDataFrames:
+            raise RuntimeError("Keine Regeln zum Speichern")
         regeln = pd.concat(regelDataFrames)
         columns = ['Name'] + list(head.values())
         regeln.to_excel(path, index=False, columns=columns)

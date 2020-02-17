@@ -527,6 +527,8 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
             options=options
         )
         if fileName:
+            if not fileName.endswith('.xls'):
+                fileName = pathlib.Path(fileName).with_suffix('.xlsx')
             self._workerThread = ExcelPaketWriter(self, fileName, self._excelDaten)
             self._workerThread.signal.connect(self.finishWrite)
             self.disableWindow()
@@ -562,8 +564,14 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
         """
         if not result['success']:
             errMsg = result.get('errMsg', 'Es ist ein Fehler aufgetreten')
-            box = QtWidgets.QMessageBox.warning(self, "Warnung", errMsg,
-                QtWidgets.QMessageBox.Ok,)
+            QtWidgets.QMessageBox.warning(
+                self, "Warnung", errMsg, QtWidgets.QMessageBox.Ok,
+                )
+        else:
+            try:
+                os.startfile(result['filename'])
+            except AttributeError: # os.startfile gibt es in Linux nicht
+                pass
 
         self._workerThread = None
         self.enableWindow()
@@ -579,10 +587,16 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
             options=options
         )
         if fileName:
-            path = pathlib.Path(fileName)
-            if not '.xls' in path.suffix:
-                path = path.with_suffix('.xlsx')
-            self._regelListe.saveRegelnToFile(path)
+            try:
+                path = pathlib.Path(fileName)
+                if not '.xls' in path.suffix:
+                    path = path.with_suffix('.xlsx')
+                self._regelListe.saveRegelnToFile(path)
+            except RuntimeError as error:
+                errMsg = '{}'.format(error)
+                QtWidgets.QMessageBox.warning(
+                    self, "Warnung", errMsg, QtWidgets.QMessageBox.Ok,
+                    )
 
     def loadRegeln(self):
         """Laedt ein Regelfile"""
