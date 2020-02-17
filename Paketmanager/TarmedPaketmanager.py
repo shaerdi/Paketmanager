@@ -1,6 +1,7 @@
 """GUI Modul des TarmedPaketmanagers"""
 
 import sys
+import os
 import pathlib
 import pickle
 import pandas as pd
@@ -79,11 +80,11 @@ class ExcelPaketWriter(QtCore.QThread):
         self.start()
 
     def run(self):
-        returnValue = {'success':False}
+        returnValue = {'success':False, 'filename': self._fname}
         try:
             writePaketeToExcel(self._daten, self._kategorien, self._fname)
+            returnValue['success'] = True
         except UIError as error:
-            returnValue['success'] = False
             returnValue['errMsg'] = str(error)
         self.signal.emit(returnValue)
 
@@ -100,7 +101,7 @@ class ExcelRegelWriter(QtCore.QThread):
         self.start()
 
     def run(self):
-        returnValue = {'success':False}
+        returnValue = {'success':False, 'filename': self._fname}
         try:
             bedingungen = self._regeln.getBedingungsliste()
             bedingungen.to_excel(self._fname, index=False)
@@ -527,7 +528,7 @@ class TarmedPaketManagerApp(QtWidgets.QMainWindow):
         )
         if fileName:
             self._workerThread = ExcelPaketWriter(self, fileName, self._excelDaten)
-            self._workerThread.signal.connect(self.finishReadExcel)
+            self._workerThread.signal.connect(self.finishWrite)
             self.disableWindow()
 
     def writeRegelExcel(self):
