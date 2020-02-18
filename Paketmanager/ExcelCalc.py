@@ -100,7 +100,8 @@ def createPakete(daten, kategorien):
     """
     buildKey = lambda s: ','.join(set(s))
 
-    leistungen = daten[daten['Tarifgruppe'].str.contains('TARMED')][['FallDatum', 'Leistung']]
+    indexGueltig = daten['Tarifgruppe'].str.contains('TARMED').fillna(False)
+    leistungen = daten[indexGueltig][['FallDatum', 'Leistung']]
     keys = leistungen.groupby('FallDatum').aggregate(buildKey)
     keys.rename({'Leistung': 'key'}, axis=1, inplace=True)
 
