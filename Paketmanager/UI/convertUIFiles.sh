@@ -7,5 +7,5 @@ done
 
 for i in $(ls *qrc)
 do
-    pyuic5 $i -o ${i/.qrc/_rc.py}
+    pyrcc5 $i -o ${i/.qrc/_rc.py}
 done
