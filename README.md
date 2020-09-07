@@ -19,3 +19,4 @@ Benötigt werden die Module
  * PyQT5
  * Pandas
  * xlrd
+ * xlsxwriter
