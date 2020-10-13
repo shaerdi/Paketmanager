@@ -29,6 +29,7 @@ def datenEinlesen(dateiname):
         daten = pd.read_excel(
             dateiname,
             converters={'Leistung':convertLeistung},
+            parse_dates=['Datumsfeld'],
         )
         try:
             kategorien = pd.read_excel(
