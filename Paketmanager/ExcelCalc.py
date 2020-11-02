@@ -296,7 +296,7 @@ class Regel:
         Bedingung erfuellt an die erste Stelle des dataframe geschoben"""
         if self._bedingungen[Regel.UND]:
             bedingung = self._bedingungen[Regel.UND][0]
-            inds = dataframe.keyAlle.str.contains(bedingung)
+            inds = dataframe.Leistung.str.contains(bedingung)
             inds = np.array(inds).nonzero()[0]
             if inds.size > 0:
                 swap0, swap1 = dataframe.iloc[0].copy(), dataframe.iloc[inds[0]].copy()
